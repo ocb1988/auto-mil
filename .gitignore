@@ -1,0 +1,44 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Auto-MIL run artifacts
+runs/
+experiments/
+logs/
+outputs/
+checkpoints/
+checkpoint.json
+checkpoint_events.jsonl
+experiment_tree.json
+experiment_tree.md
+
+# Model artifacts and large generated files
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.h5
+*.hdf5
+*.npy
+*.npz
+
+# Generated reports/cache
+*.log
+*.tmp
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

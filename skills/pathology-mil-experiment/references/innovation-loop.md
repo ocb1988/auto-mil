@@ -1,0 +1,112 @@
+# Innovation Loop Reference
+
+## Innovation Constraints
+
+Propose 1-2 innovations at a time. Each innovation must be:
+
+- testable against the confirmed baseline
+- ablatable
+- compatible with the available data and runtime
+- not just a hyperparameter rename
+
+Good innovation categories:
+
+- module: attention gating, multi-scale aggregation, prototype memory, spatial graph, uncertainty weighting
+- training: balanced sampling, curriculum, pseudo-bag strategy, hard instance mining, augmentation/mixup
+- loss: class-balanced loss, focal loss, supervised contrastive auxiliary loss, calibration loss
+- aggregation: patient-level aggregation across multiple slides
+- robustness: center/stain-invariant regularization when centers exist
+
+## Loop Protocol
+
+Before entering the loop, confirm an autonomous run contract with the user:
+
+- wall-clock budget, such as 2 hours, overnight, or until a specified date/time
+- maximum number of experiments or training jobs
+- target metric and minimum meaningful improvement threshold
+- approved search space: model components, losses, samplers, hyperparameters, and seeds/folds
+- fixed constraints: data, split, primary metric, baseline table, GPU/CPU resources, checkpoint policy
+- stopping criteria: target reached, no improvement after N rounds, repeated failure, instability, leakage risk, or user interruption
+
+After this contract is confirmed, continue running rounds without asking for confirmation after every idea, as long as every change stays inside the approved search space. Pause and ask again before changing the task definition, data, split, primary metric, method family, compute budget, or manuscript claims.
+
+For each round:
+
+1. State hypothesis.
+2. Identify code/config changes.
+3. Record git status or commit hash before changes.
+4. Implement minimal change.
+5. Run experiment.
+6. Parse metrics into a table.
+7. Reflect:
+   - improved primary metric?
+   - changed secondary metrics?
+   - overfit signal?
+   - unstable or data-leaky?
+8. Decide:
+   - keep and extend
+   - tune locally
+   - revert or abandon
+
+During an autonomous window:
+
+- record each hypothesis, command, result, reflection, and next action before starting the next run
+- prefer small, interpretable changes over broad random search
+- periodically summarize the best result so far in the experiment journal
+- keep failed runs; mark them as failed with the error and corrective action
+- stop early if the target is reached with stable validation/test behavior, not just a noisy single-fold gain
+
+## Git Hygiene
+
+Before material code changes:
+
+```powershell
+git status --short
+git diff --stat
+```
+
+After a coherent change and successful smoke test:
+
+```powershell
+git status --short
+git diff --stat
+```
+
+If the user wants commits, make small commits:
+
+- `exp: add prototype gated mil module`
+- `exp: run cptac brca baseline sweep`
+- `exp: add ablation runner`
+
+Do not revert user changes unless explicitly asked.
+
+## Experiment Journal Fields
+
+Each run should record:
+
+- run id
+- timestamp
+- git commit or diff summary
+- task/split
+- model/config path
+- command
+- environment
+- stdout/stderr paths
+- metric CSV path
+- primary metric
+- key secondary metrics
+- interpretation
+- next action
+
+## Ablation Matrix
+
+For a method with two innovations A and B:
+
+| Row | A | B | Purpose |
+|---|---|---|---|
+| Baseline | no | no | reference |
+| +A | yes | no | isolate A |
+| +B | no | yes | isolate B |
+| Full | yes | yes | final method |
+
+Keep training budget and split identical. If runtime is tight, use the best fold or a small pilot only after stating the limitation.

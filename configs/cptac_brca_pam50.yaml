@@ -1,0 +1,54 @@
+name: cptac_brca_pam50
+task:
+  label_column: PAM50
+  min_class_count: 2
+  split_seed: 2024
+  train_size: 0.7
+  val_size: 0.15
+  test_size: 0.15
+
+paths:
+  data_dir: K:\cptac-brca
+  labels_csv: K:\cptac-brca\CPTAC-BRCA_clinical_labels.csv
+  mil_baseline_dir: third_party\MIL_BASELINE
+  output_dir: E:\PyDL\auto-mil\runs\cptac_brca_pam50
+  python: D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe
+
+training:
+  device: 0
+  num_workers: 0
+  screening_epochs: 1
+  focused_epochs: 3
+  cv_epochs: 3
+  best_metric: macro_auc
+  balanced_sampler: false
+  cv_balanced_sampler: false
+  in_dim: auto
+
+search:
+  cv_models:
+    - MEAN_MIL
+    - MAX_MIL
+    - AB_MIL
+    - TRANS_MIL
+    - RRT_MIL
+    - STABLE_MIL
+    - GDF_MIL
+  screen_models:
+    - AB_MIL
+    - TRANS_MIL
+    - RRT_MIL
+    - STABLE_MIL
+    - GDF_MIL
+  focused_models:
+    - AB_MIL
+    - TRANS_MIL
+    - RRT_MIL
+    - STABLE_MIL
+    - GDF_MIL
+  learning_rates:
+    - 0.0002
+    - 0.0001
+  dropouts:
+    - 0.1
+    - 0.25

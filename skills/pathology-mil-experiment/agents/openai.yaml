@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pathology MIL Experiment"
+  short_description: "Run manuscript-grade pathology MIL experiments"
+  default_prompt: "Use $pathology-mil-experiment to plan and run the experimental section for a pathology AI manuscript."
