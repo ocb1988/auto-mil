@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from .config import load_config
@@ -9,6 +10,7 @@ from .data import prepare_cptac_brca
 from .cv import run_case_level_cv
 from .experiment_tree import run_qwbe_lite
 from .innovation_cv import run_innovation_cv
+from .log_analyzer import diagnose_log_file, diagnosis_to_payload
 from .research import run_autonomous_research
 from .state import ExperimentCheckpoint
 
@@ -115,6 +117,26 @@ def cmd_checkpoint_summary(args: argparse.Namespace) -> None:
     print("stage_counts=" + ",".join(f"{k}:{v}" for k, v in sorted(by_stage.items())))
 
 
+def cmd_analyze_log(args: argparse.Namespace) -> None:
+    path = Path(args.path)
+    files = sorted(path.rglob("*.log")) if path.is_dir() else [path]
+    records = []
+    for file_path in files:
+        diagnosis = diagnose_log_file(file_path)
+        payload = {"path": str(file_path), "diagnosis": diagnosis_to_payload(diagnosis)}
+        records.append(payload)
+    if args.json:
+        print(json.dumps(records, indent=2, ensure_ascii=True))
+        return
+    for record in records:
+        diag = record["diagnosis"] or {}
+        print(f"{record['path']}")
+        print(f"  category: {diag.get('category')}")
+        print(f"  severity: {diag.get('severity')}")
+        print(f"  summary: {diag.get('summary')}")
+        print(f"  action: {diag.get('recommended_action')}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Autonomous MIL research runner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -171,6 +193,11 @@ def build_parser() -> argparse.ArgumentParser:
     checkpoint = sub.add_parser("checkpoint-summary", help="Summarize an Auto-MIL checkpoint")
     checkpoint.add_argument("--path", required=True, help="Run directory or checkpoint.json path")
     checkpoint.set_defaults(func=cmd_checkpoint_summary)
+
+    analyze = sub.add_parser("analyze-log", help="Classify a log file or directory of .log files")
+    analyze.add_argument("--path", required=True)
+    analyze.add_argument("--json", action="store_true", help="Print JSON records")
+    analyze.set_defaults(func=cmd_analyze_log)
 
     return parser
 

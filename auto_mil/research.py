@@ -123,16 +123,19 @@ def _write_report(
         "",
         "## Results",
         "",
-        "| Rank | Stage | Recipe | Model | Status | Score | Metrics |",
-        "|---:|---|---|---|---|---:|---|",
+        "| Rank | Stage | Recipe | Model | Status | Diagnosis | Score | Metrics |",
+        "|---:|---|---|---|---|---|---:|---|",
     ]
     for rank, result in enumerate(ranked, start=1):
         metric_path = result.metrics.get("metrics_path", "")
         score = "" if result.score == float("-inf") else f"{result.score:.4f}"
+        diagnosis = ""
+        if result.diagnosis is not None:
+            diagnosis = f"{result.diagnosis.category}: {result.diagnosis.summary}".replace("|", "/")
         lines.append(
             "| "
             f"{rank} | {result.recipe.stage} | `{result.recipe.recipe_id}` | "
-            f"{result.recipe.model_name} | {result.status} | {score} | `{metric_path}` |"
+            f"{result.recipe.model_name} | {result.status} | {diagnosis} | {score} | `{metric_path}` |"
         )
     lines.extend(["", "## Commands", ""])
     for result in all_results:

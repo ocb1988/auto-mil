@@ -12,6 +12,7 @@ import yaml
 
 from .config import dump_yaml
 from .baseline_registry import assert_mil_baseline_root, assert_models_available
+from .log_analyzer import LogDiagnosis, diagnose_log_file, diagnosis_from_payload, write_diagnosis_json
 from .state import json_ready
 
 
@@ -37,6 +38,7 @@ class RunResult:
     log_dir: Path
     metrics: dict[str, Any]
     error: str | None = None
+    diagnosis: LogDiagnosis | None = None
 
     @property
     def score(self) -> float:
@@ -64,6 +66,7 @@ def run_result_from_payload(payload: dict[str, Any]) -> RunResult:
         log_dir=Path(payload["log_dir"]),
         metrics=dict(payload.get("metrics", {})),
         error=payload.get("error"),
+        diagnosis=diagnosis_from_payload(payload.get("diagnosis")),
     )
 
 
@@ -226,6 +229,10 @@ def run_recipe(
     metrics = _read_best_metrics(log_root_dir)
     status = "completed" if proc.returncode == 0 else "failed"
     error = None if proc.returncode == 0 else f"train_mil.py exited with code {proc.returncode}"
+    diagnosis = None
+    if proc.returncode != 0:
+        diagnosis = diagnose_log_file(stdout_path)
+        write_diagnosis_json(diagnosis, stdout_path.with_suffix(".diagnosis.json"))
     return RunResult(
         recipe=recipe,
         status=status,
@@ -235,4 +242,5 @@ def run_recipe(
         log_dir=log_root_dir,
         metrics=metrics,
         error=error,
+        diagnosis=diagnosis,
     )

@@ -43,6 +43,7 @@ For each round:
    - changed secondary metrics?
    - overfit signal?
    - unstable or data-leaky?
+   - if failed, what log diagnosis category was assigned?
 8. Decide:
    - keep and extend
    - tune locally
@@ -54,6 +55,7 @@ During an autonomous window:
 - prefer small, interpretable changes over broad random search
 - periodically summarize the best result so far in the experiment journal
 - keep failed runs; mark them as failed with the error and corrective action
+- run or read log diagnosis for each failed run before choosing the next experiment
 - stop early if the target is reached with stable validation/test behavior, not just a noisy single-fold gain
 
 ## Git Hygiene

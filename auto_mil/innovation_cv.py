@@ -10,6 +10,7 @@ from typing import Any
 
 from .config import AutoMilConfig
 from .data import prepare_cptac_brca_kfold
+from .log_analyzer import LogDiagnosis, diagnose_log_file, diagnosis_from_payload, write_diagnosis_json
 from .state import ExperimentCheckpoint, ResearchJournal, json_ready
 
 
@@ -24,6 +25,7 @@ class CustomRunResult:
     log_dir: Path
     metrics: dict[str, Any]
     error: str | None = None
+    diagnosis: LogDiagnosis | None = None
 
 
 def custom_result_to_payload(result: CustomRunResult) -> dict[str, Any]:
@@ -38,6 +40,7 @@ def custom_result_to_payload(result: CustomRunResult) -> dict[str, Any]:
             "log_dir": result.log_dir,
             "metrics": result.metrics,
             "error": result.error,
+            "diagnosis": result.diagnosis,
         }
     )
 
@@ -53,6 +56,7 @@ def custom_result_from_payload(payload: dict[str, Any]) -> CustomRunResult:
         log_dir=Path(payload["log_dir"]),
         metrics=dict(payload.get("metrics", {})),
         error=payload.get("error"),
+        diagnosis=diagnosis_from_payload(payload.get("diagnosis")),
     )
 
 
@@ -146,6 +150,10 @@ def run_custom_variant(
         )
     status = "completed" if proc.returncode == 0 else "failed"
     error = None if proc.returncode == 0 else f"custom_abmil exited with code {proc.returncode}"
+    diagnosis = None
+    if proc.returncode != 0:
+        diagnosis = diagnose_log_file(stdout_path)
+        write_diagnosis_json(diagnosis, stdout_path.with_suffix(".diagnosis.json"))
     return CustomRunResult(
         run_id=run_id,
         variant=variant,
@@ -156,6 +164,7 @@ def run_custom_variant(
         log_dir=log_dir,
         metrics=_read_best_metrics(log_dir),
         error=error,
+        diagnosis=diagnosis,
     )
 
 
@@ -210,14 +219,17 @@ def write_report(output_dir: Path, results: list[CustomRunResult], summary: dict
             f"{fmt('test_acc')} | {fmt('val_macro_auc')} |"
         )
     lines.extend(["", "## Per-Fold Runs", ""])
-    lines.append("| Run | Variant | Fold | Status | Test macro AUC | Metrics |")
-    lines.append("|---|---|---:|---|---:|---|")
+    lines.append("| Run | Variant | Fold | Status | Diagnosis | Test macro AUC | Metrics |")
+    lines.append("|---|---|---:|---|---|---:|---|")
     for result in results:
         auc = result.metrics.get("test_macro_auc")
         auc_text = "" if auc is None else f"{float(auc):.4f}"
+        diagnosis = ""
+        if result.diagnosis is not None:
+            diagnosis = f"{result.diagnosis.category}: {result.diagnosis.summary}".replace("|", "/")
         lines.append(
             f"| `{result.run_id}` | {result.variant} | {result.fold} | {result.status} | "
-            f"{auc_text} | `{result.metrics.get('metrics_path', '')}` |"
+            f"{diagnosis} | {auc_text} | `{result.metrics.get('metrics_path', '')}` |"
         )
     report.write_text("\n".join(lines), encoding="utf-8")
     return report

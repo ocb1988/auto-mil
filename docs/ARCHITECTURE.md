@@ -15,6 +15,7 @@ runner interface.
 | QWBE-style candidate queue | `experiment_tree.json` with scored parent/child recipe nodes |
 | Stage journal | `research_journal.jsonl` append-only records |
 | Checkpoint/resume | `checkpoint.json` and `checkpoint_events.jsonl` per run directory |
+| Log diagnosis | `LogDiagnosis` records attached to failed run payloads |
 | Experiment report | `report.md` with commands, metrics, artifacts |
 | Reproducible workspace | generated YAMLs and stdout logs per recipe |
 
@@ -78,6 +79,29 @@ rate, dropout, and balanced sampling. The selector uses a compact PUCT-style
 score so future LLM-generated priors can plug in without changing the execution
 contract.
 
+## Log Diagnosis
+
+Failed runs are passed through a lightweight failure classifier. The diagnosis
+is written into the run payload and, when available, as a sibling
+`*.diagnosis.json` next to the stdout log. Current classes include:
+
+- `missing_dependency`
+- `cuda_oom`
+- `cuda_runtime`
+- `metric_missing_class`
+- `file_not_found`
+- `h5_key_error`
+- `shape_mismatch`
+- `nan_loss`
+- `timeout`
+- `keyboard_interrupt`
+- `python_exception`
+- `unknown`
+
+The classifier is intentionally rule-based for now. It creates a stable
+interface for later autonomous decisions such as install dependency, reduce
+memory pressure, rerun with safer split, or escalate to the user.
+
 ## Why This Shape
 
 MIL_BASELINE already provides many model implementations and a common training
@@ -88,6 +112,7 @@ keeps the autonomous research state outside it.
 ## Next Extensions
 
 - Add an LLM proposal stage that writes `ExperimentNode` objects from literature/context.
+- Add policy actions that consume `LogDiagnosis` and automatically retry or adapt failed nodes.
 - Add spatial recipe families for `DAG_MIL`, `PSA_MIL`, `SC_MIL`, and
   coordinate-aware models.
 - Add seed sweeps and statistical comparison across top recipes.

@@ -129,13 +129,16 @@ def _write_cv_report(
         )
 
     lines.extend(["", "## Per-Fold Runs", ""])
-    lines.append("| Fold/Recipe | Model | Status | Test macro AUC | Metrics |")
-    lines.append("|---|---|---|---:|---|")
+    lines.append("| Fold/Recipe | Model | Status | Diagnosis | Test macro AUC | Metrics |")
+    lines.append("|---|---|---|---|---:|---|")
     for result in results:
         auc = result.metrics.get("test_macro_auc")
         auc_text = "" if auc is None else f"{float(auc):.4f}"
+        diagnosis = ""
+        if result.diagnosis is not None:
+            diagnosis = f"{result.diagnosis.category}: {result.diagnosis.summary}".replace("|", "/")
         lines.append(
-            f"| `{result.recipe.recipe_id}` | {result.recipe.model_name} | {result.status} | "
+            f"| `{result.recipe.recipe_id}` | {result.recipe.model_name} | {result.status} | {diagnosis} | "
             f"{auc_text} | `{result.metrics.get('metrics_path', '')}` |"
         )
 

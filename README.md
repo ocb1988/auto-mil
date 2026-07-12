@@ -79,6 +79,16 @@ Inspect a checkpoint:
   --path runs\cptac_brca_pam50\case_level_cv
 ```
 
+Classify a failed run log:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli analyze-log `
+  --path runs\cptac_brca_pam50\case_level_cv\stdout
+```
+
+Failed runs also write a sibling `*.diagnosis.json` next to the stdout log and
+store the diagnosis in `checkpoint.json`.
+
 Run a QWBE-lite experiment tree search:
 
 ```powershell
