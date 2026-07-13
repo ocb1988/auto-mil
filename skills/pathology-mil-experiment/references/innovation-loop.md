@@ -69,6 +69,15 @@ python -m auto_mil.cli run-autonomous-window --config configs\my_experiment.yaml
 Use `--timeout-seconds` for risky methods. Keep `--split-plan` and `--plan-id`
 fixed throughout the autonomous window.
 
+To preview or append new experiment-tree ideas from current evidence:
+
+```powershell
+python -m auto_mil.cli propose-nodes --config configs\my_experiment.yaml --max-proposals 6 --no-apply
+```
+
+Remove `--no-apply` only after the generated `proposal_report.md` stays within
+the confirmed search scope.
+
 ## Git Hygiene
 
 Before material code changes:

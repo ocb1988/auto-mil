@@ -92,6 +92,14 @@ Run an approved time-boxed autonomous window:
   --resume
 ```
 
+Preview or add new experiment-tree proposals from current evidence:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli propose-nodes `
+  --config configs\cptac_brca_pam50.yaml `
+  --max-proposals 6
+```
+
 ```powershell
 & "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli prepare-cptac `
   --data-dir K:\cptac-brca `
@@ -239,7 +247,16 @@ checkpoint for resume.
 wall-clock budget, maximum run count, or target metric is reached. It records an
 `autonomous_journal.jsonl` and `autonomous_summary.md`, uses the confirmed split
 plan, respects per-run timeout if provided, and relies on failure policy for
-safe retries.
+safe retries. When pending nodes are exhausted, it can call the proposal
+generator to add new candidate nodes from the current evidence.
+
+## Proposal Generator
+
+`propose-nodes` reads the current experiment tree, checkpoint, and
+`baseline_plan.json`, then adds auditable `ExperimentNode` proposals. The current
+deterministic generator proposes compatible baseline-family expansions and local
+refinements of the best completed recipe. Use `--no-apply` to preview without
+modifying the tree.
 
 ## Manuscript Experiment Skill
 

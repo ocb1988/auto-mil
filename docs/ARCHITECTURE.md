@@ -18,6 +18,7 @@ runner interface.
 | Statistical analysis | `stats_analysis.py` summarizes folds/seeds and paired tests |
 | Ablation runner | `ablation.py` executes component-isolation matrices |
 | Time-boxed autonomous loop | `autonomous_window.py` executes approved rounds |
+| Proposal generator | `proposal_generator.py` writes candidate tree nodes |
 | Baseline stage gate | `baseline_screen` runs cheap MIL_BASELINE models |
 | QWBE-style candidate queue | `experiment_tree.json` with scored parent/child recipe nodes |
 | Stage journal | `research_journal.jsonl` append-only records |
@@ -92,8 +93,14 @@ runner interface.
    - creates conservative retry children for selected failure categories
    - writes `experiment_tree.json` and `experiment_tree.md`
 
-12. `autonomous_window`
+12. `proposal_generation`
+   - `propose-nodes` reads baseline plans, checkpoints, and the experiment tree
+   - writes auditable candidate nodes and `proposal_report.md`
+   - supports preview mode before modifying the tree
+
+13. `autonomous_window`
    - runs one tree node per approved round
+   - can call the proposal generator when no pending nodes remain
    - stops on wall-clock budget, run budget, target metric, or no pending nodes
    - writes `autonomous_journal.jsonl` and `autonomous_summary.md`
 
@@ -251,9 +258,26 @@ Each round records the best metric so far, the generated tree report, and a stop
 reason. Dry-run tree nodes are reset before real execution so smoke tests do not
 block later training.
 
+## Proposal Generator
+
+`proposal_generator.py` is the first evidence-to-node layer. It is deterministic
+and auditable: given the current baseline plan, checkpoint, and tree, it writes
+new `ExperimentNode` candidates plus a `proposal_report.md/json`.
+
+Current proposal types:
+
+- `proposal_family`: add compatible baseline families not yet present in the tree
+- `proposal_exploit`: refine the best completed recipe with local learning-rate,
+  dropout, or balanced-sampler changes
+
+This module is intentionally separate from any future LLM provider. An LLM can
+later generate the same `ExperimentNode` objects after reading literature,
+results, and code context.
+
 ## Next Extensions
 
-- Add an LLM proposal stage that writes `ExperimentNode` objects from literature/context.
+- Add an LLM-backed proposal provider that writes the same `ExperimentNode`
+  objects as the deterministic proposal generator.
 - Add automatic recipe overrides from baseline family risk profiles.
 - Add seed-sweep execution policies on top of the statistical reporting module.
 - Add case-level prediction aggregation for datasets with multiple slides per

@@ -8,6 +8,7 @@ from typing import Any
 
 from .config import AutoMilConfig
 from .experiment_tree import ExperimentTree, run_qwbe_lite
+from .proposal_generator import propose_nodes
 from .state import ResearchJournal, json_ready, now_iso
 
 
@@ -23,6 +24,9 @@ class AutonomousContract:
     max_screen_models: int | None = None
     max_children_per_parent: int = 4
     max_failure_retry_depth: int = 1
+    enable_proposals: bool = True
+    baseline_plan_path: Path | None = None
+    max_proposals_per_round: int = 4
     dry_run: bool = False
     resume: bool = True
 
@@ -162,14 +166,36 @@ def run_autonomous_window(cfg: AutoMilConfig, contract: AutonomousContract) -> P
             break
         round_started = now_iso()
         best_before, _run_before, _model_before = _best_metric(checkpoint_path, contract.target_metric)
+        pending_before = _tree_pending_count(tree_path)
         journal.write(
             "autonomous_round_start",
             {
                 "round": round_index,
                 "best_before": best_before,
-                "pending_nodes": _tree_pending_count(tree_path),
+                "pending_nodes": pending_before,
             },
         )
+        if contract.enable_proposals and tree_path.exists() and pending_before == 0:
+            proposal_report = propose_nodes(
+                cfg,
+                tree_path=tree_path,
+                checkpoint_path=checkpoint_path,
+                baseline_plan_path=contract.baseline_plan_path,
+                output_dir=output_dir / "proposals",
+                max_proposals=contract.max_proposals_per_round,
+                apply=True,
+            )
+            journal.write(
+                "autonomous_proposals",
+                {
+                    "round": round_index,
+                    "proposal_report": str(proposal_report),
+                    "pending_nodes_after": _tree_pending_count(tree_path),
+                },
+            )
+            if _tree_pending_count(tree_path) == 0:
+                stop_reason = "no_pending_nodes"
+                break
         run_count_before = _checkpoint_run_count(checkpoint_path)
         report_path = run_qwbe_lite(
             cfg,
@@ -186,7 +212,8 @@ def run_autonomous_window(cfg: AutoMilConfig, contract: AutonomousContract) -> P
         run_count_after = _checkpoint_run_count(checkpoint_path)
         best_value, best_run_id, best_model = _best_metric(checkpoint_path, contract.target_metric)
         round_stop = None
-        if run_count_after == run_count_before and _tree_pending_count(tree_path) == 0:
+        pending_after = _tree_pending_count(tree_path)
+        if run_count_after == run_count_before and pending_after == 0 and not contract.enable_proposals:
             round_stop = "no_pending_nodes"
             stop_reason = "no_pending_nodes"
         if contract.target_value is not None and best_value is not None and best_value >= contract.target_value:

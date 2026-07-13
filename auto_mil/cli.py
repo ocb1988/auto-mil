@@ -15,6 +15,7 @@ from .experiment_tree import run_qwbe_lite
 from .failure_policy import action_to_payload, decide_failure_action
 from .innovation_cv import run_innovation_cv
 from .log_analyzer import diagnose_log_file, diagnosis_to_payload
+from .proposal_generator import propose_nodes
 from .research import run_autonomous_research
 from .split_planner import plan_splits, split_plan_to_payload, write_split_plan
 from .specs import describe_capabilities, specs_to_payload
@@ -197,11 +198,28 @@ def cmd_run_autonomous_window(args: argparse.Namespace) -> None:
         max_screen_models=args.max_screen_models,
         max_children_per_parent=args.max_children_per_parent,
         max_failure_retry_depth=args.max_failure_retry_depth,
+        enable_proposals=not args.disable_proposals,
+        baseline_plan_path=Path(args.baseline_plan) if args.baseline_plan else None,
+        max_proposals_per_round=args.max_proposals_per_round,
         dry_run=args.dry_run,
         resume=args.resume,
     )
     summary = run_autonomous_window(cfg, contract)
     print(f"summary={summary}")
+
+
+def cmd_propose_nodes(args: argparse.Namespace) -> None:
+    cfg = load_config(args.config)
+    report = propose_nodes(
+        cfg,
+        tree_path=Path(args.tree_path) if args.tree_path else None,
+        checkpoint_path=Path(args.checkpoint) if args.checkpoint else None,
+        baseline_plan_path=Path(args.baseline_plan) if args.baseline_plan else None,
+        output_dir=Path(args.output_dir) if args.output_dir else None,
+        max_proposals=args.max_proposals,
+        apply=not args.no_apply,
+    )
+    print(f"proposal_report={report}")
 
 
 def cmd_list_baselines(args: argparse.Namespace) -> None:
@@ -399,9 +417,22 @@ def build_parser() -> argparse.ArgumentParser:
     window.add_argument("--max-screen-models", type=int, default=None)
     window.add_argument("--max-children-per-parent", type=int, default=4)
     window.add_argument("--max-failure-retry-depth", type=int, default=1)
+    window.add_argument("--baseline-plan", default=None, help="baseline_plan.json used for proposal generation")
+    window.add_argument("--max-proposals-per-round", type=int, default=4)
+    window.add_argument("--disable-proposals", action="store_true", help="Do not generate new tree nodes when pending nodes are exhausted")
     window.add_argument("--dry-run", action="store_true")
     window.add_argument("--resume", action="store_true", help="Reuse completed nodes from checkpoint.json")
     window.set_defaults(func=cmd_run_autonomous_window)
+
+    propose = sub.add_parser("propose-nodes", help="Generate candidate ExperimentTree nodes from current evidence")
+    propose.add_argument("--config", required=True)
+    propose.add_argument("--tree-path", default=None, help="experiment_tree.json path")
+    propose.add_argument("--checkpoint", default=None, help="checkpoint.json path")
+    propose.add_argument("--baseline-plan", default=None, help="baseline_plan.json path")
+    propose.add_argument("--output-dir", default=None, help="Directory for proposal_report.json/md")
+    propose.add_argument("--max-proposals", type=int, default=6)
+    propose.add_argument("--no-apply", action="store_true", help="Preview proposals without adding nodes")
+    propose.set_defaults(func=cmd_propose_nodes)
 
     baselines = sub.add_parser("list-baselines", help="List bundled or configured MIL_BASELINE models")
     baselines.add_argument("--mil-baseline-dir", default="bundled")
