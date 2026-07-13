@@ -39,6 +39,13 @@ Inspect the normalized task/data interface:
   --config configs\cptac_brca_pam50.yaml
 ```
 
+Generate a split plan and stop for confirmation:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli plan-split `
+  --config configs\cptac_brca_pam50.yaml
+```
+
 ```powershell
 & "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli prepare-cptac `
   --data-dir K:\cptac-brca `
@@ -133,6 +140,8 @@ By default, outputs land under `runs/cptac_brca_pam50/`:
 - `mil_logs/`: raw MIL_BASELINE training outputs.
 - `research_journal.jsonl`: append-only stage journal.
 - `report.md`: autonomous research summary.
+- `split_plan/split_plan.json` and `split_plan/split_plan.md`: proposed split
+  options and confirmation record.
 
 ## Task/Data Interface
 
@@ -140,6 +149,13 @@ Configuration is normalized into `TaskSpec` and `DatasetSpec`. The current
 runner supports classification with H5 feature bags and configurable feature
 keys; prognosis/survival and regression fields are represented for the next
 adapters. See `docs/TASK_DATA_SPEC.md`.
+
+## Split Planner
+
+`plan-split` inspects the matched case table and proposes manuscript-grade split
+options before any baseline run. It prioritizes predefined external tests,
+center-aware holdout when center fields exist, and patient-level stratified
+n-fold CV for single-cohort datasets.
 
 ## Manuscript Experiment Skill
 

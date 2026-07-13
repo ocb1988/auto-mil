@@ -15,6 +15,7 @@ from .specs import DatasetSpec, TaskSpec, specs_to_payload
 
 
 CASE_RE = re.compile(r"^(?P<case>[A-Za-z0-9]+)-")
+LABEL_ID_COL = "_auto_mil_label_id"
 
 
 @dataclass(frozen=True)
@@ -159,11 +160,11 @@ def _load_h5_classification_slide_table(
 
     label_names = sorted(labels[label_column].unique().tolist())
     label_to_id = {name: idx for idx, name in enumerate(label_names)}
-    labels["label"] = labels[label_column].map(label_to_id).astype(int)
+    labels[LABEL_ID_COL] = labels[label_column].map(label_to_id).astype(int)
 
-    label_map_columns = ["label", label_column]
+    label_map_columns = [LABEL_ID_COL, label_column]
     for optional in (dataset.center_column, dataset.cohort_column, dataset.external_test_column):
-        if optional and optional in labels.columns:
+        if optional and optional in labels.columns and optional not in label_map_columns:
             label_map_columns.append(optional)
     label_map = labels.set_index("case_id")[label_map_columns].to_dict("index")
     slide_rows = []
@@ -177,7 +178,7 @@ def _load_h5_classification_slide_table(
         row = {
             "case_id": case_id,
             "slide_path": str(path),
-            "label": int(item["label"]),
+            "label": int(item[LABEL_ID_COL]),
             "label_name": item[label_column],
         }
         for optional in ("center_column", "cohort_column", "external_test_column"):

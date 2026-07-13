@@ -51,6 +51,19 @@ python -m auto_mil.cli inspect-spec --config configs\cptac_brca_pam50.yaml
 
 Use `--json` to capture the normalized task/data payload in experiment logs.
 
+## Split Planning
+
+After inspection, propose split options:
+
+```powershell
+python -m auto_mil.cli plan-split --config configs\cptac_brca_pam50.yaml
+```
+
+This writes `split_plan.json` and `split_plan.md` under
+`runs/<experiment>/split_plan/` by default. The planner reports case/slide/class
+counts, optional center/cohort/external-test distributions, recommended plans,
+warnings, and a confirmation gate.
+
 ## Supported Now
 
 - task kind: `classification`
@@ -59,10 +72,12 @@ Use `--json` to capture the normalized task/data payload in experiment logs.
 - split unit: case/patient id
 - labels: CSV with a case id column and a classification label column
 - optional metadata: center, cohort, external-test indicator, coordinate key
+- split planning: predefined external-test, center-holdout, single-cohort
+  stratified CV, and pilot train/val/test holdout
 
 ## Reserved Next
 
 - `prognosis` / `survival`: `time_column` and `event_column`
 - `regression`: `target_column`
-- multi-center and external-test-aware split planning
+- execution adapters that consume a confirmed split plan directly
 - explicit slide manifest files through `slide_path_column`

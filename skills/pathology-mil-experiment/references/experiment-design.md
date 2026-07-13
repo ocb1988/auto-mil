@@ -48,6 +48,16 @@ Use this priority order:
    - Split by patient/case
    - Preserve a locked test set
 
+When using this repo, run the split planner before confirming baselines:
+
+```powershell
+python -m auto_mil.cli plan-split --config configs\my_experiment.yaml
+```
+
+Review `split_plan.md` with the user. Confirm one plan before running
+manuscript-grade baselines, and do not change the split after inspecting test
+performance.
+
 Survival:
 
 - preserve event/censor distribution

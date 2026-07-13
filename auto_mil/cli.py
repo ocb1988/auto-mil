@@ -13,6 +13,7 @@ from .failure_policy import action_to_payload, decide_failure_action
 from .innovation_cv import run_innovation_cv
 from .log_analyzer import diagnose_log_file, diagnosis_to_payload
 from .research import run_autonomous_research
+from .split_planner import plan_splits, split_plan_to_payload, write_split_plan
 from .specs import describe_capabilities, specs_to_payload
 from .state import ExperimentCheckpoint
 
@@ -65,6 +66,25 @@ def cmd_inspect_spec(args: argparse.Namespace) -> None:
     print(f"can_prepare_mil_baseline={str(payload['capabilities']['can_prepare_mil_baseline']).lower()}")
     if payload["capabilities"]["blocked_reason"]:
         print(f"blocked_reason={payload['capabilities']['blocked_reason']}")
+
+
+def cmd_plan_split(args: argparse.Namespace) -> None:
+    cfg = load_config(args.config)
+    bundle = plan_splits(cfg.dataset_spec, cfg.task_spec)
+    output_dir = Path(args.output_dir) if args.output_dir else cfg.output_dir / "split_plan"
+    json_path, md_path = write_split_plan(bundle, output_dir)
+    if args.json:
+        print(json.dumps(split_plan_to_payload(bundle), indent=2, ensure_ascii=True))
+        return
+    recommended = [plan for plan in bundle.plans if plan.recommended]
+    print(f"split_plan_json={json_path}")
+    print(f"split_plan_md={md_path}")
+    print(f"cases={bundle.profile.num_cases}")
+    print(f"slides={bundle.profile.num_slides}")
+    print(f"classes={bundle.profile.class_counts}")
+    print("recommended_plans=" + ",".join(plan.plan_id for plan in recommended))
+    for plan in recommended:
+        print(f"  {plan.plan_id}: {plan.strategy} ({plan.rationale})")
 
 
 def cmd_run_cv(args: argparse.Namespace) -> None:
@@ -202,6 +222,12 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.add_argument("--config", required=True)
     inspect.add_argument("--json", action="store_true", help="Print JSON")
     inspect.set_defaults(func=cmd_inspect_spec)
+
+    split = sub.add_parser("plan-split", help="Inspect data and propose manuscript-grade split plans")
+    split.add_argument("--config", required=True)
+    split.add_argument("--output-dir", default=None, help="Directory for split_plan.json/md")
+    split.add_argument("--json", action="store_true", help="Print JSON payload")
+    split.set_defaults(func=cmd_plan_split)
 
     run = sub.add_parser("run", help="Run the staged autonomous research loop")
     run.add_argument("--config", required=True)
