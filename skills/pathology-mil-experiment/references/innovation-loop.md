@@ -55,7 +55,9 @@ During an autonomous window:
 - prefer small, interpretable changes over broad random search
 - periodically summarize the best result so far in the experiment journal
 - keep failed runs; mark them as failed with the error and corrective action
-- run or read log diagnosis for each failed run before choosing the next experiment
+- run or read log diagnosis for each failed run, then apply the repo failure policy before choosing the next experiment
+- allow automatic retry only for policy-approved categories such as CUDA OOM, NaN loss, timeout, or interruption, and only within the confirmed autonomous window
+- pause for user confirmation before dependency installs, data path fixes, H5-key changes, shape-contract changes, split-policy changes, or ambiguous failures
 - stop early if the target is reached with stable validation/test behavior, not just a noisy single-fold gain
 
 ## Git Hygiene

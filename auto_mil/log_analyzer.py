@@ -77,7 +77,7 @@ PATTERNS: list[tuple[str, str, str, str, str]] = [
     (
         "timeout",
         "runtime",
-        r"timed out|TimeoutExpired",
+        r"timed out|TimeoutExpired|TIMEOUT:",
         "Experiment exceeded the allowed runtime.",
         "Reduce budget or raise the timeout for this method.",
     ),

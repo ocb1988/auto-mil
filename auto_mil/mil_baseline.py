@@ -4,7 +4,7 @@ import csv
 import json
 import math
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,7 @@ class Recipe:
     dropout: float | None
     balanced_sampler: bool
     notes: str
+    config_overrides: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -56,7 +57,9 @@ def run_result_to_payload(result: RunResult) -> dict[str, Any]:
 
 
 def run_result_from_payload(payload: dict[str, Any]) -> RunResult:
-    recipe = Recipe(**payload["recipe"])
+    recipe_payload = dict(payload["recipe"])
+    recipe_payload.setdefault("config_overrides", {})
+    recipe = Recipe(**recipe_payload)
     return RunResult(
         recipe=recipe,
         status=str(payload["status"]),
@@ -124,6 +127,8 @@ def build_mil_config(
 
     _deep_update_if_present(cfg, "Model.optimizer.adam_config.lr", float(recipe.lr))
     _deep_update_if_present(cfg, "Model.optimizer.adamw_config.lr", float(recipe.lr))
+    for key, value in recipe.config_overrides.items():
+        _deep_update_if_present(cfg, key, value)
 
     dump_yaml(cfg, output_config_path)
     return output_config_path
@@ -215,22 +220,34 @@ def run_recipe(
             metrics={},
         )
 
+    timed_out = False
     with stdout_path.open("w", encoding="utf-8") as stdout:
-        proc = subprocess.run(
-            command,
-            cwd=str(mil_baseline_dir),
-            stdout=stdout,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=timeout_seconds,
-            check=False,
-        )
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=str(mil_baseline_dir),
+                stdout=stdout,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+            returncode = proc.returncode
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            returncode = 124
+            stdout.write(f"\nTIMEOUT: train_mil.py exceeded {timeout_seconds} seconds\n")
 
     metrics = _read_best_metrics(log_root_dir)
-    status = "completed" if proc.returncode == 0 else "failed"
-    error = None if proc.returncode == 0 else f"train_mil.py exited with code {proc.returncode}"
+    status = "completed" if returncode == 0 else "failed"
+    if returncode == 0:
+        error = None
+    elif timed_out:
+        error = f"train_mil.py exceeded timeout_seconds={timeout_seconds}"
+    else:
+        error = f"train_mil.py exited with code {returncode}"
     diagnosis = None
-    if proc.returncode != 0:
+    if returncode != 0:
         diagnosis = diagnose_log_file(stdout_path)
         write_diagnosis_json(diagnosis, stdout_path.with_suffix(".diagnosis.json"))
     return RunResult(

@@ -89,6 +89,18 @@ Classify a failed run log:
 Failed runs also write a sibling `*.diagnosis.json` next to the stdout log and
 store the diagnosis in `checkpoint.json`.
 
+Print the conservative retry/escalation policy for one failed log:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli failure-action `
+  --path runs\cptac_brca_pam50\case_level_cv\stdout\my_failed_run.log
+```
+
+The failure policy can plan safe retry overrides for categories such as CUDA
+OOM, NaN loss, timeout, or interruption. It deliberately pauses for dependency,
+data, shape, H5-key, or split-policy problems instead of mutating the
+environment or dataset automatically.
+
 Run a QWBE-lite experiment tree search:
 
 ```powershell
@@ -99,7 +111,9 @@ Run a QWBE-lite experiment tree search:
 ```
 
 This writes `experiment_tree.json`, `experiment_tree.md`, a checkpoint, and raw
-MIL_BASELINE artifacts under `runs/cptac_brca_pam50/experiment_tree/`.
+MIL_BASELINE artifacts under `runs/cptac_brca_pam50/experiment_tree/`. Failed
+tree nodes are diagnosed; retryable failures can add one conservative retry
+child node within the configured failure-retry depth.
 
 ## Outputs
 

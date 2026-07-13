@@ -16,6 +16,7 @@ runner interface.
 | Stage journal | `research_journal.jsonl` append-only records |
 | Checkpoint/resume | `checkpoint.json` and `checkpoint_events.jsonl` per run directory |
 | Log diagnosis | `LogDiagnosis` records attached to failed run payloads |
+| Failure policy | `FailureAction` retry/escalation decisions from diagnoses |
 | Experiment report | `report.md` with commands, metrics, artifacts |
 | Reproducible workspace | generated YAMLs and stdout logs per recipe |
 
@@ -47,6 +48,7 @@ runner interface.
    - seeds root nodes from candidate baseline models
    - executes pending nodes selected by a QWBE-lite score
    - expands high-scoring root nodes into focused hyperparameter children
+   - creates conservative retry children for selected failure categories
    - writes `experiment_tree.json` and `experiment_tree.md`
 
 ## Checkpoint and Resume
@@ -102,6 +104,22 @@ The classifier is intentionally rule-based for now. It creates a stable
 interface for later autonomous decisions such as install dependency, reduce
 memory pressure, rerun with safer split, or escalate to the user.
 
+## Failure Policy
+
+`failure_policy.py` consumes a `LogDiagnosis` and returns a `FailureAction`.
+Retryable categories are limited to failures where the experiment definition can
+remain fixed:
+
+- `cuda_oom`: retry with lower memory-pressure config overrides
+- `nan_loss`: retry with lower learning rate and conservative regularization
+- `timeout`: retry with a shorter epoch budget
+- `keyboard_interrupt`: resume or rerun through checkpoint policy
+
+The policy pauses for dependency installs, data path/H5-key errors, shape
+mismatches, missing-class metrics, and ambiguous Python/CUDA failures. This is
+intentional: autonomous loops should not silently change data, split policy,
+runtime packages, primary metrics, or manuscript claims.
+
 ## Why This Shape
 
 MIL_BASELINE already provides many model implementations and a common training
@@ -112,7 +130,6 @@ keeps the autonomous research state outside it.
 ## Next Extensions
 
 - Add an LLM proposal stage that writes `ExperimentNode` objects from literature/context.
-- Add policy actions that consume `LogDiagnosis` and automatically retry or adapt failed nodes.
 - Add spatial recipe families for `DAG_MIL`, `PSA_MIL`, `SC_MIL`, and
   coordinate-aware models.
 - Add seed sweeps and statistical comparison across top recipes.

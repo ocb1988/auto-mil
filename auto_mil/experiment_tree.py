@@ -8,6 +8,7 @@ from typing import Any
 
 from .config import AutoMilConfig
 from .data import prepare_cptac_brca
+from .failure_policy import action_to_payload, decide_failure_action, make_retry_recipe
 from .mil_baseline import Recipe, RunResult, run_recipe, run_result_from_payload, run_result_to_payload
 from .state import ExperimentCheckpoint, ResearchJournal, json_ready, now_iso
 
@@ -198,6 +199,36 @@ def _expand_completed_roots(tree: ExperimentTree, cfg: AutoMilConfig, max_childr
     return added
 
 
+def _add_failure_retry_node(tree: ExperimentTree, failed_node: ExperimentNode, result: RunResult) -> ExperimentNode | None:
+    action = decide_failure_action(result.diagnosis)
+    if not action.retryable:
+        return None
+    if failed_node.depth >= int(tree.metadata.get("max_failure_retry_depth", 1)):
+        return None
+    retry_children = [
+        child_id
+        for child_id in failed_node.children
+        if child_id in tree.nodes and tree.nodes[child_id].recipe.stage.endswith("_retry")
+    ]
+    if retry_children:
+        return None
+
+    retry_recipe = make_retry_recipe(failed_node.recipe, action, retry_index=len(retry_children) + 1)
+    if retry_recipe is None:
+        return None
+    retry_node = ExperimentNode(
+        node_id=_node_id(retry_recipe.recipe_id),
+        parent_id=failed_node.node_id,
+        recipe=retry_recipe,
+        depth=failed_node.depth + 1,
+        prior=0.35,
+        rationale=f"Failure policy retry after {action.category}: {action.summary}",
+    )
+    if tree.add_node(retry_node):
+        return retry_node
+    return None
+
+
 def _write_tree_report(path: Path, cfg: AutoMilConfig, tree: ExperimentTree) -> Path:
     ranked = sorted(
         tree.nodes.values(),
@@ -231,6 +262,7 @@ def run_qwbe_lite(
     max_runs: int,
     max_screen_models: int | None = None,
     max_children_per_parent: int = 4,
+    max_failure_retry_depth: int = 1,
     dry_run: bool = False,
     resume: bool = False,
 ) -> Path:
@@ -260,6 +292,7 @@ def run_qwbe_lite(
             "metadata_json": str(artifacts.metadata_json),
             "max_runs": max_runs,
             "dry_run": dry_run,
+            "max_failure_retry_depth": max_failure_retry_depth,
         }
     )
     checkpoint.update_metadata(
@@ -309,6 +342,18 @@ def run_qwbe_lite(
             journal.write("tree_node_result", {"node_id": node.node_id, "result": run_result_to_payload(result)})
 
         tree.update_from_result(node.node_id, result)
+        if result.status == "failed":
+            retry_node = _add_failure_retry_node(tree, node, result)
+            action = decide_failure_action(result.diagnosis)
+            journal.write(
+                "tree_failure_policy",
+                {
+                    "node_id": node.node_id,
+                    "diagnosis": result.diagnosis.category if result.diagnosis else None,
+                    "action": action_to_payload(action),
+                    "retry_node_id": retry_node.node_id if retry_node else None,
+                },
+            )
         _expand_completed_roots(tree, cfg, max_children_per_parent)
         tree.save()
         executed += 1

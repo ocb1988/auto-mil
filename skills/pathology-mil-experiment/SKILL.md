@@ -54,7 +54,7 @@ Run this as a staged research workflow with explicit user confirmations at decis
    - Within that confirmed window, run continuously without asking for confirmation after every round, as long as changes stay inside the approved innovation/search scope and do not change the split, data, primary metric, or manuscript claims.
    - For each round: propose idea -> implement or configure -> run -> parse metrics -> reflect -> keep/revert/refine.
    - Optimize against the confirmed primary metric, but watch secondary metrics and overfitting.
-   - For failed runs, classify the stdout/stderr with the repo log analyzer before choosing the next action.
+   - For failed runs, classify the stdout/stderr with the repo log analyzer, then consult the failure policy before choosing the next action. Retry only when the policy keeps the approved data, split, metric, method family, and compute budget intact.
    - Keep a structured journal entry for every run, including command, config, code diff/commit, metric table, interpretation, and next action.
    - Continue until the target is reached, budget is exhausted, improvement plateaus, a safety/data-leakage risk appears, or the user stops the run.
 

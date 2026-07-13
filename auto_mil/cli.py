@@ -9,6 +9,7 @@ from .baseline_registry import available_models, resolve_mil_baseline_dir
 from .data import prepare_cptac_brca
 from .cv import run_case_level_cv
 from .experiment_tree import run_qwbe_lite
+from .failure_policy import action_to_payload, decide_failure_action
 from .innovation_cv import run_innovation_cv
 from .log_analyzer import diagnose_log_file, diagnosis_to_payload
 from .research import run_autonomous_research
@@ -76,6 +77,7 @@ def cmd_run_tree(args: argparse.Namespace) -> None:
         max_runs=args.max_runs,
         max_screen_models=args.max_screen_models,
         max_children_per_parent=args.max_children_per_parent,
+        max_failure_retry_depth=args.max_failure_retry_depth,
         dry_run=args.dry_run,
         resume=args.resume,
     )
@@ -137,6 +139,27 @@ def cmd_analyze_log(args: argparse.Namespace) -> None:
         print(f"  action: {diag.get('recommended_action')}")
 
 
+def cmd_failure_action(args: argparse.Namespace) -> None:
+    diagnosis = diagnose_log_file(Path(args.path))
+    action = decide_failure_action(diagnosis)
+    payload = {
+        "path": str(Path(args.path)),
+        "diagnosis": diagnosis_to_payload(diagnosis),
+        "failure_action": action_to_payload(action),
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, ensure_ascii=True))
+        return
+    print(f"path={payload['path']}")
+    print(f"diagnosis={diagnosis.category}")
+    print(f"severity={diagnosis.severity}")
+    print(f"policy_action={action.action}")
+    print(f"retryable={str(action.retryable).lower()}")
+    print(f"summary={action.summary}")
+    if action.config_overrides:
+        print("config_overrides=" + json.dumps(action.config_overrides, sort_keys=True))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Autonomous MIL research runner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -181,6 +204,7 @@ def build_parser() -> argparse.ArgumentParser:
     tree.add_argument("--max-runs", type=int, default=6)
     tree.add_argument("--max-screen-models", type=int, default=None)
     tree.add_argument("--max-children-per-parent", type=int, default=4)
+    tree.add_argument("--max-failure-retry-depth", type=int, default=1)
     tree.add_argument("--dry-run", action="store_true")
     tree.add_argument("--resume", action="store_true", help="Reuse completed nodes from checkpoint.json")
     tree.set_defaults(func=cmd_run_tree)
@@ -198,6 +222,11 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--path", required=True)
     analyze.add_argument("--json", action="store_true", help="Print JSON records")
     analyze.set_defaults(func=cmd_analyze_log)
+
+    failure = sub.add_parser("failure-action", help="Classify a log and print the retry/escalation policy")
+    failure.add_argument("--path", required=True)
+    failure.add_argument("--json", action="store_true", help="Print JSON record")
+    failure.set_defaults(func=cmd_failure_action)
 
     return parser
 
