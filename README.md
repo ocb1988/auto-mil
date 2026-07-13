@@ -78,6 +78,20 @@ Run the default innovation ablation matrix:
   --split-plan runs\cptac_brca_pam50\split_plan\split_plan.json
 ```
 
+Run an approved time-boxed autonomous window:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli run-autonomous-window `
+  --config configs\cptac_brca_pam50.yaml `
+  --max-minutes 120 `
+  --max-runs 20 `
+  --target-metric test_macro_auc `
+  --target-value 0.85 `
+  --split-plan runs\cptac_brca_pam50\split_plan\split_plan.json `
+  --plan-id patient_stratified_holdout `
+  --resume
+```
+
 ```powershell
 & "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli prepare-cptac `
   --data-dir K:\cptac-brca `
@@ -218,6 +232,14 @@ and paired comparisons against a chosen baseline when common folds exist.
 split: cross-entropy baseline, focal loss only, prototype head only, and the
 full focal-plus-prototype method. It writes `ablation_cv_report.md` and a
 checkpoint for resume.
+
+## Autonomous Window
+
+`run-autonomous-window` runs one QWBE-lite tree node per round until the approved
+wall-clock budget, maximum run count, or target metric is reached. It records an
+`autonomous_journal.jsonl` and `autonomous_summary.md`, uses the confirmed split
+plan, respects per-run timeout if provided, and relies on failure policy for
+safe retries.
 
 ## Manuscript Experiment Skill
 

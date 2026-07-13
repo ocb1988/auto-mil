@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .ablation import run_ablation_cv
+from .autonomous_window import AutonomousContract, run_autonomous_window
 from .config import load_config
 from .baseline_registry import available_models, resolve_mil_baseline_dir
 from .baseline_families import baseline_plan_to_payload, build_baseline_plan, write_baseline_plan
@@ -176,10 +177,31 @@ def cmd_run_tree(args: argparse.Namespace) -> None:
         max_failure_retry_depth=args.max_failure_retry_depth,
         split_plan_path=Path(args.split_plan) if args.split_plan else None,
         split_plan_id=args.plan_id,
+        timeout_seconds=args.timeout_seconds,
         dry_run=args.dry_run,
         resume=args.resume,
     )
     print(f"report={report}")
+
+
+def cmd_run_autonomous_window(args: argparse.Namespace) -> None:
+    cfg = load_config(args.config)
+    contract = AutonomousContract(
+        max_minutes=args.max_minutes,
+        max_runs=args.max_runs,
+        target_metric=args.target_metric,
+        target_value=args.target_value,
+        per_run_timeout_seconds=args.timeout_seconds,
+        split_plan_path=Path(args.split_plan) if args.split_plan else None,
+        split_plan_id=args.plan_id,
+        max_screen_models=args.max_screen_models,
+        max_children_per_parent=args.max_children_per_parent,
+        max_failure_retry_depth=args.max_failure_retry_depth,
+        dry_run=args.dry_run,
+        resume=args.resume,
+    )
+    summary = run_autonomous_window(cfg, contract)
+    print(f"summary={summary}")
 
 
 def cmd_list_baselines(args: argparse.Namespace) -> None:
@@ -360,9 +382,26 @@ def build_parser() -> argparse.ArgumentParser:
     tree.add_argument("--max-failure-retry-depth", type=int, default=1)
     tree.add_argument("--split-plan", default=None, help="Confirmed split_plan.json for holdout/external/center plans")
     tree.add_argument("--plan-id", default=None, help="Plan id inside split_plan.json")
+    tree.add_argument("--timeout-seconds", type=int, default=None, help="Per-node training timeout")
     tree.add_argument("--dry-run", action="store_true")
     tree.add_argument("--resume", action="store_true", help="Reuse completed nodes from checkpoint.json")
     tree.set_defaults(func=cmd_run_tree)
+
+    window = sub.add_parser("run-autonomous-window", help="Run a time-boxed autonomous experiment loop")
+    window.add_argument("--config", required=True)
+    window.add_argument("--max-minutes", type=float, required=True)
+    window.add_argument("--max-runs", type=int, required=True)
+    window.add_argument("--target-metric", default="test_macro_auc")
+    window.add_argument("--target-value", type=float, default=None)
+    window.add_argument("--timeout-seconds", type=int, default=None, help="Per-node training timeout")
+    window.add_argument("--split-plan", default=None, help="Confirmed split_plan.json for holdout/external/center plans")
+    window.add_argument("--plan-id", default=None, help="Plan id inside split_plan.json")
+    window.add_argument("--max-screen-models", type=int, default=None)
+    window.add_argument("--max-children-per-parent", type=int, default=4)
+    window.add_argument("--max-failure-retry-depth", type=int, default=1)
+    window.add_argument("--dry-run", action="store_true")
+    window.add_argument("--resume", action="store_true", help="Reuse completed nodes from checkpoint.json")
+    window.set_defaults(func=cmd_run_autonomous_window)
 
     baselines = sub.add_parser("list-baselines", help="List bundled or configured MIL_BASELINE models")
     baselines.add_argument("--mil-baseline-dir", default="bundled")

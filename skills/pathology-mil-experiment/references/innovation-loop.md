@@ -60,6 +60,15 @@ During an autonomous window:
 - pause for user confirmation before dependency installs, data path fixes, H5-key changes, shape-contract changes, split-policy changes, or ambiguous failures
 - stop early if the target is reached with stable validation/test behavior, not just a noisy single-fold gain
 
+When using this repo after the contract is confirmed:
+
+```powershell
+python -m auto_mil.cli run-autonomous-window --config configs\my_experiment.yaml --max-minutes 120 --max-runs 20 --target-metric test_macro_auc --target-value 0.85 --split-plan runs\my_experiment\split_plan\split_plan.json --plan-id patient_stratified_holdout --resume
+```
+
+Use `--timeout-seconds` for risky methods. Keep `--split-plan` and `--plan-id`
+fixed throughout the autonomous window.
+
 ## Git Hygiene
 
 Before material code changes:

@@ -17,6 +17,7 @@ runner interface.
 | Baseline family planner | `baseline_families.py` assesses method fit and requirements |
 | Statistical analysis | `stats_analysis.py` summarizes folds/seeds and paired tests |
 | Ablation runner | `ablation.py` executes component-isolation matrices |
+| Time-boxed autonomous loop | `autonomous_window.py` executes approved rounds |
 | Baseline stage gate | `baseline_screen` runs cheap MIL_BASELINE models |
 | QWBE-style candidate queue | `experiment_tree.json` with scored parent/child recipe nodes |
 | Stage journal | `research_journal.jsonl` append-only records |
@@ -90,6 +91,11 @@ runner interface.
    - expands high-scoring root nodes into focused hyperparameter children
    - creates conservative retry children for selected failure categories
    - writes `experiment_tree.json` and `experiment_tree.md`
+
+12. `autonomous_window`
+   - runs one tree node per approved round
+   - stops on wall-clock budget, run budget, target metric, or no pending nodes
+   - writes `autonomous_journal.jsonl` and `autonomous_summary.md`
 
 ## Checkpoint and Resume
 
@@ -227,6 +233,23 @@ matrix isolates class-balanced focal loss and a prototype auxiliary head:
 
 The runner uses the same fold materialization and checkpoint policy as baseline
 CV so the ablation table is comparable to the main experiment.
+
+## Autonomous Window
+
+`autonomous_window.py` is the conservative unattended execution layer. It does
+not create a new task, split, metric, or method family; it repeatedly advances
+the QWBE-lite tree under an explicit contract:
+
+- wall-clock budget
+- maximum number of runs
+- target metric and optional target value
+- confirmed split plan
+- per-run timeout
+- failure retry depth
+
+Each round records the best metric so far, the generated tree report, and a stop
+reason. Dry-run tree nodes are reset before real execution so smoke tests do not
+block later training.
 
 ## Next Extensions
 

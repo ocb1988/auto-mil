@@ -107,6 +107,16 @@ class ExperimentTree:
     def completed_nodes(self) -> list[ExperimentNode]:
         return [node for node in self.nodes.values() if node.status == "completed"]
 
+    def reset_dry_run_nodes(self) -> int:
+        reset = 0
+        for node in self.nodes.values():
+            if node.status == "dry_run":
+                node.status = "pending"
+                node.score = None
+                node.updated_at = now_iso()
+                reset += 1
+        return reset
+
     def select_next(self, c_puct: float = 1.5) -> ExperimentNode | None:
         pending = self.pending_nodes()
         if not pending:
@@ -266,6 +276,7 @@ def run_qwbe_lite(
     max_failure_retry_depth: int = 1,
     split_plan_path: Path | None = None,
     split_plan_id: str | None = None,
+    timeout_seconds: int | None = None,
     dry_run: bool = False,
     resume: bool = False,
 ) -> Path:
@@ -304,6 +315,7 @@ def run_qwbe_lite(
             "max_failure_retry_depth": max_failure_retry_depth,
             "split_plan": str(split_plan_path) if split_plan_path else None,
             "split_plan_id": selected_split.plan_id if selected_split else None,
+            "timeout_seconds": timeout_seconds,
         }
     )
     checkpoint.update_metadata(
@@ -314,8 +326,13 @@ def run_qwbe_lite(
         dry_run=dry_run,
         split_plan=str(split_plan_path) if split_plan_path else None,
         split_plan_id=selected_split.plan_id if selected_split else None,
+        timeout_seconds=timeout_seconds,
     )
     _seed_root_nodes(tree, cfg, max_screen_models)
+    if not dry_run:
+        reset_count = tree.reset_dry_run_nodes()
+        if reset_count:
+            journal.write("tree_dry_run_nodes_reset", {"count": reset_count})
     tree.save()
 
     training = cfg.raw.get("training", {})
@@ -333,6 +350,7 @@ def run_qwbe_lite(
         "num_workers": int(training.get("num_workers", 0)),
         "best_metric": str(training.get("best_metric", "macro_auc")),
         "dry_run": dry_run,
+        "timeout_seconds": timeout_seconds,
     }
 
     executed = 0
