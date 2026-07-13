@@ -61,6 +61,15 @@ Assess baseline families before launching the screen:
   --config configs\cptac_brca_pam50.yaml
 ```
 
+After CV finishes, compute statistical summaries:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli analyze-stats `
+  --checkpoint runs\cptac_brca_pam50\case_level_cv\checkpoint.json `
+  --metric test_macro_auc `
+  --baseline AB_MIL
+```
+
 ```powershell
 & "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli prepare-cptac `
   --data-dir K:\cptac-brca `
@@ -188,6 +197,12 @@ dataset and runtime. It reports trainability, baseline family, coordinate needs,
 dependency status, memory risk, and a recommended manuscript screen. The default
 screen is `AB_MIL`, `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and `GDF_MIL` when
 compatible.
+
+## Statistical Analysis
+
+`analyze-stats` reads completed fold/seed runs from `checkpoint.json` and writes
+`stats_report.json/md` with mean, standard deviation, 95% confidence intervals,
+and paired comparisons against a chosen baseline when common folds exist.
 
 ## Manuscript Experiment Skill
 

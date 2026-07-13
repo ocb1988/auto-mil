@@ -116,6 +116,14 @@ Classification:
 - secondary: balanced accuracy, macro F1, accuracy, confusion matrix
 - report per-class performance when classes are imbalanced
 
+After CV or seed sweeps finish in this repo, run:
+
+```powershell
+python -m auto_mil.cli analyze-stats --checkpoint runs\my_experiment\case_level_cv\checkpoint.json --metric test_macro_auc --baseline AB_MIL
+```
+
+Use the resulting mean/std/95% CI and paired comparisons for manuscript tables.
+
 Survival:
 
 - primary: C-index

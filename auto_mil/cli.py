@@ -16,6 +16,7 @@ from .log_analyzer import diagnose_log_file, diagnosis_to_payload
 from .research import run_autonomous_research
 from .split_planner import plan_splits, split_plan_to_payload, write_split_plan
 from .specs import describe_capabilities, specs_to_payload
+from .stats_analysis import build_stats_report, stats_report_to_payload, write_stats_report
 from .state import ExperimentCheckpoint
 
 
@@ -240,6 +241,22 @@ def cmd_failure_action(args: argparse.Namespace) -> None:
         print("config_overrides=" + json.dumps(action.config_overrides, sort_keys=True))
 
 
+def cmd_analyze_stats(args: argparse.Namespace) -> None:
+    report = build_stats_report(args.checkpoint, args.metric, args.baseline)
+    output_dir = Path(args.output_dir) if args.output_dir else Path(args.checkpoint).parent / "stats"
+    json_path, md_path = write_stats_report(report, output_dir)
+    if args.json:
+        print(json.dumps(stats_report_to_payload(report), indent=2, ensure_ascii=True))
+        return
+    print(f"stats_report_json={json_path}")
+    print(f"stats_report_md={md_path}")
+    print(f"metric={report.metric}")
+    for row in report.summaries:
+        print(f"  {row.model_name}: n={row.n} mean={row.mean} ci95=({row.ci95_low}, {row.ci95_high})")
+    for warning in report.warnings:
+        print(f"warning={warning}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Autonomous MIL research runner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -333,6 +350,14 @@ def build_parser() -> argparse.ArgumentParser:
     failure.add_argument("--path", required=True)
     failure.add_argument("--json", action="store_true", help="Print JSON record")
     failure.set_defaults(func=cmd_failure_action)
+
+    stats = sub.add_parser("analyze-stats", help="Compute fold/seed statistical summaries from a checkpoint")
+    stats.add_argument("--checkpoint", required=True, help="checkpoint.json path")
+    stats.add_argument("--metric", default="test_macro_auc")
+    stats.add_argument("--baseline", default=None, help="Baseline model for paired comparisons")
+    stats.add_argument("--output-dir", default=None, help="Directory for stats_report.json/md")
+    stats.add_argument("--json", action="store_true", help="Print JSON payload")
+    stats.set_defaults(func=cmd_analyze_stats)
 
     return parser
 

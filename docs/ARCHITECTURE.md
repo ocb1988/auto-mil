@@ -15,6 +15,7 @@ runner interface.
 | Split confirmation gate | `split_plan.json/md` proposes center/external/CV plans |
 | Split execution adapter | `split_executor.py` materializes confirmed plans |
 | Baseline family planner | `baseline_families.py` assesses method fit and requirements |
+| Statistical analysis | `stats_analysis.py` summarizes folds/seeds and paired tests |
 | Baseline stage gate | `baseline_screen` runs cheap MIL_BASELINE models |
 | QWBE-style candidate queue | `experiment_tree.json` with scored parent/child recipe nodes |
 | Stage journal | `research_journal.jsonl` append-only records |
@@ -67,12 +68,17 @@ runner interface.
    - expands learning-rate/dropout/balanced-sampler recipes
    - runs a longer budget
 
-8. `report`
+8. `statistical_analysis`
+   - `analyze-stats` reads completed checkpoint runs
+   - reports mean, standard deviation, 95% CI, and paired comparisons
+   - writes `stats_report.json` and `stats_report.md`
+
+9. `report`
    - ranks all completed runs by `test_macro_auc`, falling back to
      `val_macro_auc`
    - records exact commands and artifact paths
 
-9. `experiment_tree`
+10. `experiment_tree`
    - seeds root nodes from candidate baseline models
    - executes pending nodes selected by a QWBE-lite score
    - expands high-scoring root nodes into focused hyperparameter children
@@ -195,11 +201,19 @@ or long-context, recent graph/spatial methods, and coordinate-aware families.
 The planner verifies local trainability through the baseline registry and checks
 dependencies such as `scipy` or `sklearn` without installing anything.
 
+## Statistical Analysis
+
+`stats_analysis.py` extracts completed fold or seed metrics from
+`checkpoint.json`. It computes model-level mean/std/95% confidence intervals and
+paired comparisons to a chosen baseline over common folds. If `scipy` is
+available, paired t-test and Wilcoxon p-values are reported; otherwise the
+report still includes descriptive statistics and confidence intervals.
+
 ## Next Extensions
 
 - Add an LLM proposal stage that writes `ExperimentNode` objects from literature/context.
 - Add automatic recipe overrides from baseline family risk profiles.
-- Add seed sweeps and statistical comparison across top recipes.
+- Add seed-sweep execution policies on top of the statistical reporting module.
 - Add case-level prediction aggregation for datasets with multiple slides per
   patient.
 - Add paper-style report generation once experiment evidence is substantial.
