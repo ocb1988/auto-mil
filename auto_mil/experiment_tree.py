@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import AutoMilConfig
-from .data import prepare_cptac_brca
+from .data import prepare_dataset
 from .failure_policy import action_to_payload, decide_failure_action, make_retry_recipe
 from .mil_baseline import Recipe, RunResult, run_recipe, run_result_from_payload, run_result_to_payload
 from .state import ExperimentCheckpoint, ResearchJournal, json_ready, now_iso
@@ -272,17 +272,12 @@ def run_qwbe_lite(
     checkpoint = ExperimentCheckpoint(output_dir / "checkpoint.json")
     tree = ExperimentTree(output_dir / "experiment_tree.json")
 
-    task = cfg.raw.get("task", {})
-    artifacts = prepare_cptac_brca(
-        data_dir=cfg.data_dir,
-        labels_csv=cfg.labels_csv,
+    task = cfg.task_spec
+    dataset = cfg.dataset_spec
+    artifacts = prepare_dataset(
+        dataset=dataset,
+        task=task,
         output_dir=output_dir / "dataset",
-        label_column=str(task.get("label_column", "PAM50")),
-        min_class_count=int(task.get("min_class_count", 2)),
-        seed=int(task.get("split_seed", 2024)),
-        train_size=float(task.get("train_size", 0.7)),
-        val_size=float(task.get("val_size", 0.15)),
-        test_size=float(task.get("test_size", 0.15)),
     )
     metadata = _load_metadata(artifacts.metadata_json)
     tree.metadata.update(

@@ -11,6 +11,7 @@ runner interface.
 | Camyla idea | Auto-MIL equivalent |
 |---|---|
 | Dataset-in research entry | `prepare_cptac_brca` scans H5 bags and clinical labels |
+| Task/data contract | `TaskSpec` and `DatasetSpec` normalize endpoint and feature inputs |
 | Baseline stage gate | `baseline_screen` runs cheap MIL_BASELINE models |
 | QWBE-style candidate queue | `experiment_tree.json` with scored parent/child recipe nodes |
 | Stage journal | `research_journal.jsonl` append-only records |
@@ -22,29 +23,36 @@ runner interface.
 
 ## Current Workflow
 
-1. `dataset_audit`
+1. `spec_inspection`
+   - `inspect-spec` prints the normalized task/data interface
+   - verifies whether the current MIL_BASELINE adapter can prepare the task
+   - records feature format, feature key, coordinate key, case id policy, and
+     label/target fields
+
+2. `dataset_audit`
+   - normalizes config into `TaskSpec` and `DatasetSpec`
    - scans H5 files
-   - infers feature dimension from `features`
+   - infers feature dimension from the configured feature key
    - joins slide files to `case_id`
    - splits by case to avoid patient leakage
    - writes MIL_BASELINE wide CSV
 
-2. `baseline_screen`
+3. `baseline_screen`
    - runs low-budget models such as `MEAN_MIL`, `MAX_MIL`, `AB_MIL`
    - stores one generated YAML per recipe
    - parses `Best_Log*.csv`
 
-3. `focused_runs`
+4. `focused_runs`
    - selects the best screened model as the anchor
    - expands learning-rate/dropout/balanced-sampler recipes
    - runs a longer budget
 
-4. `report`
+5. `report`
    - ranks all completed runs by `test_macro_auc`, falling back to
      `val_macro_auc`
    - records exact commands and artifact paths
 
-5. `experiment_tree`
+6. `experiment_tree`
    - seeds root nodes from candidate baseline models
    - executes pending nodes selected by a QWBE-lite score
    - expands high-scoring root nodes into focused hyperparameter children
@@ -127,9 +135,25 @@ surface. Auto-MIL should therefore be a research orchestrator rather than a new
 training framework. The code treats MIL_BASELINE as the executable substrate and
 keeps the autonomous research state outside it.
 
+## Task/Data Interface
+
+`specs.py` defines the front door for new projects:
+
+- `TaskSpec` captures classification, prognosis/survival, and regression
+  fields, plus split seed and default split ratios.
+- `DatasetSpec` captures dataset paths, case id columns, center/cohort/external
+  test columns, H5 feature key, coordinate key, and case-id filename regex.
+- `FeatureSpec` records the feature-bag format and key names.
+
+The current executable path supports classification with H5 feature bags. Other
+task kinds are represented but intentionally blocked at preparation time until a
+matching runner/metric adapter exists.
+
 ## Next Extensions
 
 - Add an LLM proposal stage that writes `ExperimentNode` objects from literature/context.
+- Add a split planner that consumes `TaskSpec`/`DatasetSpec` and proposes
+  center-aware, external-test, or n-fold plans before execution.
 - Add spatial recipe families for `DAG_MIL`, `PSA_MIL`, `SC_MIL`, and
   coordinate-aware models.
 - Add seed sweeps and statistical comparison across top recipes.

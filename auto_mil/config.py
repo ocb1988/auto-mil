@@ -7,6 +7,7 @@ from typing import Any
 import yaml
 
 from .baseline_registry import resolve_mil_baseline_dir
+from .specs import DatasetSpec, TaskSpec, dataset_spec_from_config, task_spec_from_config
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,14 @@ class AutoMilConfig:
     @property
     def labels_csv(self) -> Path:
         return Path(self.raw["paths"]["labels_csv"])
+
+    @property
+    def task_spec(self) -> TaskSpec:
+        return task_spec_from_config(self.raw)
+
+    @property
+    def dataset_spec(self) -> DatasetSpec:
+        return dataset_spec_from_config(self.raw)
 
     @property
     def mil_baseline_dir(self) -> Path:

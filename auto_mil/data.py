@@ -11,6 +11,8 @@ import h5py
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
+from .specs import DatasetSpec, TaskSpec, specs_to_payload
+
 
 CASE_RE = re.compile(r"^(?P<case>[A-Za-z0-9]+)-")
 
@@ -28,18 +30,18 @@ class KFoldArtifacts:
     metadata_json: Path
 
 
-def case_id_from_h5(path: Path) -> str:
-    match = CASE_RE.match(path.name)
+def case_id_from_h5(path: Path, case_id_regex: str = CASE_RE.pattern) -> str:
+    match = re.compile(case_id_regex).match(path.name)
     if not match:
         raise ValueError(f"Cannot infer case_id from H5 filename: {path.name}")
     return match.group("case")
 
 
-def inspect_h5(path: Path) -> dict[str, Any]:
+def inspect_h5(path: Path, feature_key: str = "features", coords_key: str | None = None) -> dict[str, Any]:
     with h5py.File(path, "r") as h5:
-        if "features" not in h5:
-            raise ValueError(f"{path} does not contain a 'features' dataset")
-        features = h5["features"]
+        if feature_key not in h5:
+            raise ValueError(f"{path} does not contain a {feature_key!r} dataset")
+        features = h5[feature_key]
         shape = tuple(int(x) for x in features.shape)
         if len(shape) == 3:
             n_patches = shape[1]
@@ -50,7 +52,19 @@ def inspect_h5(path: Path) -> dict[str, Any]:
         else:
             raise ValueError(f"Unsupported features shape in {path}: {shape}")
         keys = sorted(list(h5.keys()))
-    return {"shape": shape, "n_patches": n_patches, "in_dim": in_dim, "keys": keys}
+        coords_shape = None
+        if coords_key and coords_key in h5:
+            coords_shape = tuple(int(x) for x in h5[coords_key].shape)
+    return {
+        "format": "h5",
+        "feature_key": feature_key,
+        "coords_key": coords_key,
+        "shape": shape,
+        "n_patches": n_patches,
+        "in_dim": in_dim,
+        "keys": keys,
+        "coords_shape": coords_shape,
+    }
 
 
 def _split_cases(
@@ -105,14 +119,16 @@ def _wide_split_csv(slide_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _load_cptac_slide_table(
-    data_dir: str | Path,
-    labels_csv: str | Path,
-    label_column: str = "PAM50",
-    min_class_count: int = 2,
+def _load_h5_classification_slide_table(
+    dataset: DatasetSpec,
+    task: TaskSpec,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, int], Counter, int, dict[str, Any]]:
-    data_dir = Path(data_dir)
-    labels_csv = Path(labels_csv)
+    task.validate_for_mil_baseline()
+    if dataset.feature.format.lower() != "h5":
+        raise NotImplementedError(f"Unsupported feature format for MIL_BASELINE preparation: {dataset.feature.format}")
+    data_dir = dataset.data_dir
+    labels_csv = dataset.labels_csv
+    label_column = task.outcome_column
 
     h5_paths = sorted(data_dir.glob("*.h5"))
     if not h5_paths:
@@ -121,47 +137,110 @@ def _load_cptac_slide_table(
         raise FileNotFoundError(labels_csv)
 
     labels = pd.read_csv(labels_csv)
-    if "case_id" not in labels.columns:
-        raise ValueError("labels_csv must contain a case_id column")
+    if dataset.case_id_column not in labels.columns:
+        raise ValueError(f"labels_csv must contain a {dataset.case_id_column!r} column")
     if label_column not in labels.columns:
         raise ValueError(f"labels_csv does not contain label column {label_column!r}")
 
-    labels = labels[["case_id", label_column]].dropna().copy()
+    keep_columns = [dataset.case_id_column, label_column]
+    optional_columns = [
+        dataset.center_column,
+        dataset.cohort_column,
+        dataset.external_test_column,
+    ]
+    keep_columns.extend([col for col in optional_columns if col and col in labels.columns])
+    labels = labels[keep_columns].dropna(subset=[dataset.case_id_column, label_column]).copy()
+    labels = labels.rename(columns={dataset.case_id_column: "case_id"})
     labels["case_id"] = labels["case_id"].astype(str)
     labels[label_column] = labels[label_column].astype(str)
     counts = labels[label_column].value_counts()
-    keep_labels = set(counts[counts >= min_class_count].index)
+    keep_labels = set(counts[counts >= task.min_class_count].index)
     labels = labels[labels[label_column].isin(keep_labels)].copy()
 
     label_names = sorted(labels[label_column].unique().tolist())
     label_to_id = {name: idx for idx, name in enumerate(label_names)}
     labels["label"] = labels[label_column].map(label_to_id).astype(int)
 
-    label_map = labels.set_index("case_id")[["label", label_column]].to_dict("index")
+    label_map_columns = ["label", label_column]
+    for optional in (dataset.center_column, dataset.cohort_column, dataset.external_test_column):
+        if optional and optional in labels.columns:
+            label_map_columns.append(optional)
+    label_map = labels.set_index("case_id")[label_map_columns].to_dict("index")
     slide_rows = []
     missing_cases = Counter()
     for path in h5_paths:
-        case_id = case_id_from_h5(path)
+        case_id = case_id_from_h5(path, dataset.feature.case_id_regex)
         if case_id not in label_map:
             missing_cases[case_id] += 1
             continue
         item = label_map[case_id]
-        slide_rows.append(
-            {
-                "case_id": case_id,
-                "slide_path": str(path),
-                "label": int(item["label"]),
-                "label_name": item[label_column],
-            }
-        )
+        row = {
+            "case_id": case_id,
+            "slide_path": str(path),
+            "label": int(item["label"]),
+            "label_name": item[label_column],
+        }
+        for optional in ("center_column", "cohort_column", "external_test_column"):
+            source_col = getattr(dataset, optional)
+            if source_col and source_col in item:
+                row[source_col] = item[source_col]
+        slide_rows.append(row)
 
     slide_df = pd.DataFrame(slide_rows)
     if slide_df.empty:
         raise ValueError("No H5 slides matched the labels table")
 
-    case_df = slide_df[["case_id", "label_name", "label"]].drop_duplicates("case_id")
-    first_info = inspect_h5(Path(slide_df.iloc[0]["slide_path"]))
+    case_columns = ["case_id", "label_name", "label"]
+    for optional in (dataset.center_column, dataset.cohort_column, dataset.external_test_column):
+        if optional and optional in slide_df.columns:
+            case_columns.append(optional)
+    case_df = slide_df[case_columns].drop_duplicates("case_id")
+    first_info = inspect_h5(
+        Path(slide_df.iloc[0]["slide_path"]),
+        feature_key=dataset.feature.feature_key,
+        coords_key=dataset.feature.coords_key,
+    )
     return slide_df, case_df, label_to_id, missing_cases, len(h5_paths), first_info
+
+
+def _load_cptac_slide_table(
+    data_dir: str | Path,
+    labels_csv: str | Path,
+    label_column: str = "PAM50",
+    min_class_count: int = 2,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, int], Counter, int, dict[str, Any]]:
+    dataset = DatasetSpec(name="CPTAC-BRCA", data_dir=Path(data_dir), labels_csv=Path(labels_csv))
+    task = TaskSpec(kind="classification", label_column=label_column, min_class_count=min_class_count)
+    return _load_h5_classification_slide_table(dataset, task)
+
+
+def _metadata_base(
+    dataset: DatasetSpec,
+    task: TaskSpec,
+    label_to_id: dict[str, int],
+    missing_cases: Counter,
+    num_h5_total: int,
+    slide_df: pd.DataFrame,
+    case_df: pd.DataFrame,
+    first_info: dict[str, Any],
+) -> dict[str, Any]:
+    metadata = {
+        "dataset": dataset.name,
+        "label_column": task.label_column,
+        "task": specs_to_payload(task, dataset)["task"],
+        "dataset_spec": specs_to_payload(task, dataset)["dataset"],
+        "label_to_id": label_to_id,
+        "num_classes": len(label_to_id),
+        "num_h5_total": num_h5_total,
+        "num_h5_matched": int(len(slide_df)),
+        "num_cases": int(case_df.shape[0]),
+        "missing_label_cases": dict(missing_cases),
+        "feature": first_info,
+    }
+    for column in (dataset.center_column, dataset.cohort_column, dataset.external_test_column):
+        if column and column in case_df.columns:
+            metadata[f"{column}_counts"] = case_df[column].astype(str).value_counts().to_dict()
+    return metadata
 
 
 def prepare_cptac_brca(
@@ -175,15 +254,32 @@ def prepare_cptac_brca(
     val_size: float = 0.15,
     test_size: float = 0.15,
 ) -> DatasetArtifacts:
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    slide_df, case_df, label_to_id, missing_cases, num_h5_total, first_info = _load_cptac_slide_table(
-        data_dir=data_dir,
-        labels_csv=labels_csv,
+    dataset = DatasetSpec(name="CPTAC-BRCA", data_dir=Path(data_dir), labels_csv=Path(labels_csv))
+    task = TaskSpec(
+        kind="classification",
         label_column=label_column,
         min_class_count=min_class_count,
+        split_seed=seed,
+        train_size=train_size,
+        val_size=val_size,
+        test_size=test_size,
     )
-    splits = _split_cases(case_df, "label_name", seed, train_size, val_size, test_size)
+    return prepare_dataset(dataset=dataset, task=task, output_dir=output_dir)
+
+
+def prepare_dataset(
+    *,
+    dataset: DatasetSpec,
+    task: TaskSpec,
+    output_dir: str | Path,
+) -> DatasetArtifacts:
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    slide_df, case_df, label_to_id, missing_cases, num_h5_total, first_info = _load_h5_classification_slide_table(
+        dataset,
+        task,
+    )
+    splits = _split_cases(case_df, "label_name", task.split_seed, task.train_size, task.val_size, task.test_size)
     split_by_case = {case_id: split for split, cases in splits.items() for case_id in cases}
     slide_df["split"] = slide_df["case_id"].map(split_by_case)
     slide_df = slide_df.dropna(subset=["split"]).copy()
@@ -195,23 +291,17 @@ def prepare_cptac_brca(
     h5_paths_csv = output_dir / "h5_paths.csv"
     pd.DataFrame({"h5_path": slide_df["slide_path"].astype(str)}).to_csv(h5_paths_csv, index=False)
 
-    metadata = {
-        "dataset": "CPTAC-BRCA",
-        "label_column": label_column,
-        "label_to_id": label_to_id,
-        "num_classes": len(label_to_id),
-        "num_h5_total": num_h5_total,
-        "num_h5_matched": int(len(slide_df)),
-        "num_cases": int(case_df.shape[0]),
-        "missing_label_cases": dict(missing_cases),
-        "feature": first_info,
-        "split_counts_slides": slide_df.groupby(["split", "label_name"]).size().unstack(fill_value=0).to_dict(),
-        "split_counts_cases": case_df.assign(split=case_df["case_id"].map(split_by_case))
-        .groupby(["split", "label_name"])
-        .size()
-        .unstack(fill_value=0)
-        .to_dict(),
-    }
+    metadata = _metadata_base(dataset, task, label_to_id, missing_cases, num_h5_total, slide_df, case_df, first_info)
+    metadata.update(
+        {
+            "split_counts_slides": slide_df.groupby(["split", "label_name"]).size().unstack(fill_value=0).to_dict(),
+            "split_counts_cases": case_df.assign(split=case_df["case_id"].map(split_by_case))
+            .groupby(["split", "label_name"])
+            .size()
+            .unstack(fill_value=0)
+            .to_dict(),
+        }
+    )
     metadata_json = output_dir / "metadata.json"
     with metadata_json.open("w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
@@ -230,13 +320,29 @@ def prepare_cptac_brca_kfold(
     n_splits: int = 5,
     val_fraction_of_train: float = 0.2,
 ) -> KFoldArtifacts:
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    slide_df, case_df, label_to_id, missing_cases, num_h5_total, first_info = _load_cptac_slide_table(
-        data_dir=data_dir,
-        labels_csv=labels_csv,
+    dataset = DatasetSpec(name="CPTAC-BRCA", data_dir=Path(data_dir), labels_csv=Path(labels_csv))
+    task = TaskSpec(
+        kind="classification",
         label_column=label_column,
         min_class_count=min_class_count,
+        split_seed=seed,
+        cv_val_fraction_of_train=val_fraction_of_train,
+    )
+    return prepare_dataset_kfold(dataset=dataset, task=task, output_dir=output_dir, n_splits=n_splits)
+
+
+def prepare_dataset_kfold(
+    *,
+    dataset: DatasetSpec,
+    task: TaskSpec,
+    output_dir: str | Path,
+    n_splits: int = 5,
+) -> KFoldArtifacts:
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    slide_df, case_df, label_to_id, missing_cases, num_h5_total, first_info = _load_h5_classification_slide_table(
+        dataset,
+        task,
     )
 
     min_class = int(case_df["label_name"].value_counts().min())
@@ -245,7 +351,7 @@ def prepare_cptac_brca_kfold(
             f"n_splits={n_splits} is too high for the rarest class with {min_class} cases"
         )
 
-    splitter = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    splitter = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=task.split_seed)
     fold_dirs: list[Path] = []
     fold_summaries: list[dict[str, Any]] = []
     case_df = case_df.reset_index(drop=True)
@@ -259,8 +365,8 @@ def prepare_cptac_brca_kfold(
             stratify = None
         train_cases, val_cases = train_test_split(
             trainval_cases,
-            test_size=val_fraction_of_train,
-            random_state=seed + fold_idx,
+            test_size=task.cv_val_fraction_of_train,
+            random_state=task.split_seed + fold_idx,
             stratify=stratify,
         )
         split_by_case = {
@@ -301,20 +407,14 @@ def prepare_cptac_brca_kfold(
 
     h5_paths_csv = output_dir / "h5_paths.csv"
     pd.DataFrame({"h5_path": slide_df["slide_path"].astype(str)}).to_csv(h5_paths_csv, index=False)
-    metadata = {
-        "dataset": "CPTAC-BRCA",
-        "label_column": label_column,
-        "label_to_id": label_to_id,
-        "num_classes": len(label_to_id),
-        "num_h5_total": num_h5_total,
-        "num_h5_matched": int(len(slide_df)),
-        "num_cases": int(case_df.shape[0]),
-        "missing_label_cases": dict(missing_cases),
-        "feature": first_info,
-        "n_splits": n_splits,
-        "val_fraction_of_train": val_fraction_of_train,
-        "folds": fold_summaries,
-    }
+    metadata = _metadata_base(dataset, task, label_to_id, missing_cases, num_h5_total, slide_df, case_df, first_info)
+    metadata.update(
+        {
+            "n_splits": n_splits,
+            "val_fraction_of_train": task.cv_val_fraction_of_train,
+            "folds": fold_summaries,
+        }
+    )
     metadata_json = output_dir / "metadata.json"
     with metadata_json.open("w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)

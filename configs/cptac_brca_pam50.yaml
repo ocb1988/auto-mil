@@ -1,6 +1,16 @@
 name: cptac_brca_pam50
+dataset:
+  name: CPTAC-BRCA
+  case_id_column: case_id
+  feature:
+    format: h5
+    feature_key: features
+    coords_key: null
+
 task:
+  kind: classification
   label_column: PAM50
+  primary_metric: test_macro_auc
   min_class_count: 2
   split_seed: 2024
   train_size: 0.7

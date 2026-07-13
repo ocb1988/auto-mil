@@ -9,7 +9,7 @@ from statistics import mean, stdev
 from typing import Any
 
 from .config import AutoMilConfig
-from .data import prepare_cptac_brca_kfold
+from .data import prepare_dataset_kfold
 from .log_analyzer import LogDiagnosis, diagnose_log_file, diagnosis_from_payload, write_diagnosis_json
 from .state import ExperimentCheckpoint, ResearchJournal, json_ready
 
@@ -248,19 +248,16 @@ def run_innovation_cv(
     output_dir.mkdir(parents=True, exist_ok=True)
     journal = ResearchJournal(output_dir / "research_journal.jsonl")
     checkpoint = ExperimentCheckpoint(output_dir / "checkpoint.json")
-    task = cfg.raw.get("task", {})
+    task = cfg.task_spec
+    dataset = cfg.dataset_spec
     training = cfg.raw.get("training", {})
     search = cfg.raw.get("search", {})
 
-    artifacts = prepare_cptac_brca_kfold(
-        data_dir=cfg.data_dir,
-        labels_csv=cfg.labels_csv,
+    artifacts = prepare_dataset_kfold(
+        dataset=dataset,
+        task=task,
         output_dir=output_dir / "folds",
-        label_column=str(task.get("label_column", "PAM50")),
-        min_class_count=int(task.get("min_class_count", 2)),
-        seed=int(task.get("split_seed", 2024)),
         n_splits=n_splits,
-        val_fraction_of_train=float(task.get("cv_val_fraction_of_train", 0.2)),
     )
     metadata = json.loads(artifacts.metadata_json.read_text(encoding="utf-8"))
     checkpoint.update_metadata(

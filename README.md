@@ -10,6 +10,7 @@ code by default, using slide-level H5 feature bags such as `K:\cptac-brca`.
 ## What It Does
 
 - Audits a pathology MIL dataset and builds MIL_BASELINE-compatible CSV files.
+- Normalizes each project into explicit `TaskSpec` and `DatasetSpec` records.
 - Screens several baseline MIL methods under a small budget.
 - Ships MIL_BASELINE configs/modules/processors inside the project, including
   classic methods such as `AB_MIL`, `TRANS_MIL`, `RRT_MIL` and recent methods
@@ -30,6 +31,13 @@ The design borrows Camyla's staged autonomous research pattern:
 ## Quick Demo
 
 Use the Torch environment you specified:
+
+Inspect the normalized task/data interface:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli inspect-spec `
+  --config configs\cptac_brca_pam50.yaml
+```
 
 ```powershell
 & "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli prepare-cptac `
@@ -125,6 +133,13 @@ By default, outputs land under `runs/cptac_brca_pam50/`:
 - `mil_logs/`: raw MIL_BASELINE training outputs.
 - `research_journal.jsonl`: append-only stage journal.
 - `report.md`: autonomous research summary.
+
+## Task/Data Interface
+
+Configuration is normalized into `TaskSpec` and `DatasetSpec`. The current
+runner supports classification with H5 feature bags and configurable feature
+keys; prognosis/survival and regression fields are represented for the next
+adapters. See `docs/TASK_DATA_SPEC.md`.
 
 ## Manuscript Experiment Skill
 

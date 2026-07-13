@@ -13,6 +13,7 @@ from .failure_policy import action_to_payload, decide_failure_action
 from .innovation_cv import run_innovation_cv
 from .log_analyzer import diagnose_log_file, diagnosis_to_payload
 from .research import run_autonomous_research
+from .specs import describe_capabilities, specs_to_payload
 from .state import ExperimentCheckpoint
 
 
@@ -40,6 +41,30 @@ def cmd_run(args: argparse.Namespace) -> None:
         resume=args.resume,
     )
     print(f"report={report}")
+
+
+def cmd_inspect_spec(args: argparse.Namespace) -> None:
+    cfg = load_config(args.config)
+    task = cfg.task_spec
+    dataset = cfg.dataset_spec
+    payload = specs_to_payload(task, dataset)
+    payload["capabilities"] = describe_capabilities(task, dataset)
+    if args.json:
+        print(json.dumps(payload, indent=2, ensure_ascii=True))
+        return
+    print(f"experiment={cfg.name}")
+    print(f"task_kind={task.kind}")
+    print(f"outcome_column={task.outcome_column}")
+    print(f"dataset={dataset.name}")
+    print(f"data_dir={dataset.data_dir}")
+    print(f"labels_csv={dataset.labels_csv}")
+    print(f"case_id_column={dataset.case_id_column}")
+    print(f"feature_format={dataset.feature.format}")
+    print(f"feature_key={dataset.feature.feature_key}")
+    print(f"coords_key={dataset.feature.coords_key}")
+    print(f"can_prepare_mil_baseline={str(payload['capabilities']['can_prepare_mil_baseline']).lower()}")
+    if payload["capabilities"]["blocked_reason"]:
+        print(f"blocked_reason={payload['capabilities']['blocked_reason']}")
 
 
 def cmd_run_cv(args: argparse.Namespace) -> None:
@@ -172,6 +197,11 @@ def build_parser() -> argparse.ArgumentParser:
     prep.add_argument("--min-class-count", type=int, default=2)
     prep.add_argument("--seed", type=int, default=2024)
     prep.set_defaults(func=cmd_prepare_cptac)
+
+    inspect = sub.add_parser("inspect-spec", help="Show normalized TaskSpec/DatasetSpec for a config")
+    inspect.add_argument("--config", required=True)
+    inspect.add_argument("--json", action="store_true", help="Print JSON")
+    inspect.set_defaults(func=cmd_inspect_spec)
 
     run = sub.add_parser("run", help="Run the staged autonomous research loop")
     run.add_argument("--config", required=True)
