@@ -54,6 +54,13 @@ After confirming the plan, pass it into execution so the split is locked:
   --split-plan runs\cptac_brca_pam50\split_plan\split_plan.json
 ```
 
+Assess baseline families before launching the screen:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli plan-baselines `
+  --config configs\cptac_brca_pam50.yaml
+```
+
 ```powershell
 & "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli prepare-cptac `
   --data-dir K:\cptac-brca `
@@ -173,6 +180,14 @@ Training commands can consume a confirmed plan:
 - `run-tree --split-plan ... --plan-id ...` accepts holdout/external/center plans.
 
 The selected plan is written into run metadata under `confirmed_split`.
+
+## Baseline Planner
+
+`plan-baselines` checks the bundled MIL_BASELINE methods against the current
+dataset and runtime. It reports trainability, baseline family, coordinate needs,
+dependency status, memory risk, and a recommended manuscript screen. The default
+screen is `AB_MIL`, `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and `GDF_MIL` when
+compatible.
 
 ## Manuscript Experiment Skill
 

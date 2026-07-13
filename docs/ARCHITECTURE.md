@@ -14,6 +14,7 @@ runner interface.
 | Task/data contract | `TaskSpec` and `DatasetSpec` normalize endpoint and feature inputs |
 | Split confirmation gate | `split_plan.json/md` proposes center/external/CV plans |
 | Split execution adapter | `split_executor.py` materializes confirmed plans |
+| Baseline family planner | `baseline_families.py` assesses method fit and requirements |
 | Baseline stage gate | `baseline_screen` runs cheap MIL_BASELINE models |
 | QWBE-style candidate queue | `experiment_tree.json` with scored parent/child recipe nodes |
 | Stage journal | `research_journal.jsonl` append-only records |
@@ -50,22 +51,28 @@ runner interface.
    - holdout/external/center plans are materialized for `run` and `run-tree`
    - selected plans are recorded under `confirmed_split` in metadata
 
-5. `baseline_screen`
+5. `baseline_planning`
+   - `plan-baselines` checks method availability, family, dependencies, coords,
+     and memory risk
+   - recommends a manuscript screen such as `AB_MIL`, `TRANS_MIL`, `RRT_MIL`,
+     `STABLE_MIL`, and `GDF_MIL`
+
+6. `baseline_screen`
    - runs low-budget models such as `MEAN_MIL`, `MAX_MIL`, `AB_MIL`
    - stores one generated YAML per recipe
    - parses `Best_Log*.csv`
 
-6. `focused_runs`
+7. `focused_runs`
    - selects the best screened model as the anchor
    - expands learning-rate/dropout/balanced-sampler recipes
    - runs a longer budget
 
-7. `report`
+8. `report`
    - ranks all completed runs by `test_macro_auc`, falling back to
      `val_macro_auc`
    - records exact commands and artifact paths
 
-8. `experiment_tree`
+9. `experiment_tree`
    - seeds root nodes from candidate baseline models
    - executes pending nodes selected by a QWBE-lite score
    - expands high-scoring root nodes into focused hyperparameter children
@@ -180,11 +187,18 @@ the data split after seeing results.
 selects a plan by id or the single recommended plan, materializes the concrete
 MIL_BASELINE CSVs, and records the selected plan in `metadata.json`.
 
+## Baseline Families
+
+`baseline_families.py` keeps curated method metadata outside the training
+runner. It currently classifies sanity pooling, classic attention, transformer
+or long-context, recent graph/spatial methods, and coordinate-aware families.
+The planner verifies local trainability through the baseline registry and checks
+dependencies such as `scipy` or `sklearn` without installing anything.
+
 ## Next Extensions
 
 - Add an LLM proposal stage that writes `ExperimentNode` objects from literature/context.
-- Add spatial recipe families for `DAG_MIL`, `PSA_MIL`, `SC_MIL`, and
-  coordinate-aware models.
+- Add automatic recipe overrides from baseline family risk profiles.
 - Add seed sweeps and statistical comparison across top recipes.
 - Add case-level prediction aggregation for datasets with multiple slides per
   patient.

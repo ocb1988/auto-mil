@@ -97,6 +97,17 @@ Before confirming the baseline suite:
 - check special requirements such as coordinates, graph construction, patch count limits, GPU memory, and package dependencies
 - state which methods are selected for the pilot screen and which are reserved for the final manuscript-scale table
 
+When using this repo, run the baseline planner after confirming the split:
+
+```powershell
+python -m auto_mil.cli plan-baselines --config configs\my_experiment.yaml
+```
+
+Review `baseline_plan.md` with the user before training. Prefer the default
+manuscript screen `AB_MIL`, `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and
+`GDF_MIL` when compatible, and add spatial methods such as `DAG_MIL`,
+`PSA_MIL`, or `SC_MIL` only after checking coordinate support and memory risk.
+
 ## Metrics
 
 Classification:

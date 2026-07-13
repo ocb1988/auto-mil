@@ -74,6 +74,18 @@ Use `--plan-id` when multiple plans are recommended or when selecting a
 non-default holdout/pilot plan. The selected plan is stored in `metadata.json`
 as `confirmed_split`.
 
+## Baseline Planning
+
+After locking the split, assess candidate baselines:
+
+```powershell
+python -m auto_mil.cli plan-baselines --config configs\cptac_brca_pam50.yaml
+```
+
+The planner inspects feature keys and coordinate availability, then writes
+`baseline_plan.json` and `baseline_plan.md` under
+`runs/<experiment>/baseline_plan/`.
+
 ## Supported Now
 
 - task kind: `classification`

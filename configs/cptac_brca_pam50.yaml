@@ -5,7 +5,7 @@ dataset:
   feature:
     format: h5
     feature_key: features
-    coords_key: null
+    coords_key: coords
 
 task:
   kind: classification

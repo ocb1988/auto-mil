@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .config import load_config
 from .baseline_registry import available_models, resolve_mil_baseline_dir
+from .baseline_families import baseline_plan_to_payload, build_baseline_plan, write_baseline_plan
 from .data import prepare_cptac_brca
 from .cv import run_case_level_cv
 from .experiment_tree import run_qwbe_lite
@@ -87,6 +88,32 @@ def cmd_plan_split(args: argparse.Namespace) -> None:
     print("recommended_plans=" + ",".join(plan.plan_id for plan in recommended))
     for plan in recommended:
         print(f"  {plan.plan_id}: {plan.strategy} ({plan.rationale})")
+
+
+def cmd_plan_baselines(args: argparse.Namespace) -> None:
+    cfg = load_config(args.config)
+    models = args.models.split(",") if args.models else None
+    plan = build_baseline_plan(
+        dataset=cfg.dataset_spec,
+        task=cfg.task_spec,
+        mil_baseline_dir=cfg.mil_baseline_dir,
+        models=models,
+    )
+    output_dir = Path(args.output_dir) if args.output_dir else cfg.output_dir / "baseline_plan"
+    json_path, md_path = write_baseline_plan(plan, output_dir)
+    if args.json:
+        print(json.dumps(baseline_plan_to_payload(plan), indent=2, ensure_ascii=True))
+        return
+    print(f"baseline_plan_json={json_path}")
+    print(f"baseline_plan_md={md_path}")
+    print(f"has_real_coords={str(plan.has_real_coords).lower()}")
+    print("recommended_screen=" + ",".join(plan.recommended_screen))
+    for item in plan.assessments:
+        if item.recommended_for_screen or item.warnings:
+            print(
+                f"  {item.model_name}: compatible={str(item.compatible).lower()} "
+                f"tier={item.tier} coords={item.coordinate_policy} warnings={'; '.join(item.warnings)}"
+            )
 
 
 def cmd_run_cv(args: argparse.Namespace) -> None:
@@ -236,6 +263,13 @@ def build_parser() -> argparse.ArgumentParser:
     split.add_argument("--output-dir", default=None, help="Directory for split_plan.json/md")
     split.add_argument("--json", action="store_true", help="Print JSON payload")
     split.set_defaults(func=cmd_plan_split)
+
+    baseline_plan = sub.add_parser("plan-baselines", help="Assess and recommend MIL baseline families")
+    baseline_plan.add_argument("--config", required=True)
+    baseline_plan.add_argument("--models", default=None, help="Comma-separated model list to assess")
+    baseline_plan.add_argument("--output-dir", default=None, help="Directory for baseline_plan.json/md")
+    baseline_plan.add_argument("--json", action="store_true", help="Print JSON payload")
+    baseline_plan.set_defaults(func=cmd_plan_baselines)
 
     run = sub.add_parser("run", help="Run the staged autonomous research loop")
     run.add_argument("--config", required=True)
