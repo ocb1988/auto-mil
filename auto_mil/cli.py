@@ -38,6 +38,8 @@ def cmd_run(args: argparse.Namespace) -> None:
         cfg,
         max_screen_runs=args.max_screen_runs,
         max_focused_runs=args.max_focused_runs,
+        split_plan_path=Path(args.split_plan) if args.split_plan else None,
+        split_plan_id=args.plan_id,
         dry_run=args.dry_run,
         resume=args.resume,
     )
@@ -95,6 +97,8 @@ def cmd_run_cv(args: argparse.Namespace) -> None:
         models=models,
         n_splits=args.n_splits,
         epochs=args.epochs,
+        split_plan_path=Path(args.split_plan) if args.split_plan else None,
+        split_plan_id=args.plan_id,
         dry_run=args.dry_run,
         resume=args.resume,
     )
@@ -109,6 +113,8 @@ def cmd_run_innovation_cv(args: argparse.Namespace) -> None:
         variants=variants,
         n_splits=args.n_splits,
         epochs=args.epochs,
+        split_plan_path=Path(args.split_plan) if args.split_plan else None,
+        split_plan_id=args.plan_id,
         dry_run=args.dry_run,
         resume=args.resume,
     )
@@ -123,6 +129,8 @@ def cmd_run_tree(args: argparse.Namespace) -> None:
         max_screen_models=args.max_screen_models,
         max_children_per_parent=args.max_children_per_parent,
         max_failure_retry_depth=args.max_failure_retry_depth,
+        split_plan_path=Path(args.split_plan) if args.split_plan else None,
+        split_plan_id=args.plan_id,
         dry_run=args.dry_run,
         resume=args.resume,
     )
@@ -233,6 +241,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--config", required=True)
     run.add_argument("--max-screen-runs", type=int, default=None)
     run.add_argument("--max-focused-runs", type=int, default=None)
+    run.add_argument("--split-plan", default=None, help="Confirmed split_plan.json for holdout/external/center plans")
+    run.add_argument("--plan-id", default=None, help="Plan id inside split_plan.json")
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--resume", action="store_true", help="Reuse completed runs from checkpoint.json")
     run.set_defaults(func=cmd_run)
@@ -242,6 +252,8 @@ def build_parser() -> argparse.ArgumentParser:
     cv.add_argument("--n-splits", type=int, default=5)
     cv.add_argument("--epochs", type=int, default=None)
     cv.add_argument("--models", default=None, help="Comma-separated model list")
+    cv.add_argument("--split-plan", default=None, help="Confirmed split_plan.json for CV plans")
+    cv.add_argument("--plan-id", default=None, help="Plan id inside split_plan.json")
     cv.add_argument("--dry-run", action="store_true")
     cv.add_argument("--resume", action="store_true", help="Reuse completed runs from checkpoint.json")
     cv.set_defaults(func=cmd_run_cv)
@@ -251,6 +263,8 @@ def build_parser() -> argparse.ArgumentParser:
     innovation.add_argument("--n-splits", type=int, default=5)
     innovation.add_argument("--epochs", type=int, default=3)
     innovation.add_argument("--variants", default="AB_MIL_FOCAL,AB_MIL_FOCAL_PROTO")
+    innovation.add_argument("--split-plan", default=None, help="Confirmed split_plan.json for CV plans")
+    innovation.add_argument("--plan-id", default=None, help="Plan id inside split_plan.json")
     innovation.add_argument("--dry-run", action="store_true")
     innovation.add_argument("--resume", action="store_true", help="Reuse completed runs from checkpoint.json")
     innovation.set_defaults(func=cmd_run_innovation_cv)
@@ -261,6 +275,8 @@ def build_parser() -> argparse.ArgumentParser:
     tree.add_argument("--max-screen-models", type=int, default=None)
     tree.add_argument("--max-children-per-parent", type=int, default=4)
     tree.add_argument("--max-failure-retry-depth", type=int, default=1)
+    tree.add_argument("--split-plan", default=None, help="Confirmed split_plan.json for holdout/external/center plans")
+    tree.add_argument("--plan-id", default=None, help="Plan id inside split_plan.json")
     tree.add_argument("--dry-run", action="store_true")
     tree.add_argument("--resume", action="store_true", help="Reuse completed nodes from checkpoint.json")
     tree.set_defaults(func=cmd_run_tree)

@@ -282,6 +282,33 @@ def prepare_dataset(
     )
     splits = _split_cases(case_df, "label_name", task.split_seed, task.train_size, task.val_size, task.test_size)
     split_by_case = {case_id: split for split, cases in splits.items() for case_id in cases}
+    return prepare_dataset_from_case_splits(
+        dataset=dataset,
+        task=task,
+        output_dir=output_dir,
+        split_by_case=split_by_case,
+        loaded=(slide_df, case_df, label_to_id, missing_cases, num_h5_total, first_info),
+    )
+
+
+def prepare_dataset_from_case_splits(
+    *,
+    dataset: DatasetSpec,
+    task: TaskSpec,
+    output_dir: str | Path,
+    split_by_case: dict[str, str],
+    extra_metadata: dict[str, Any] | None = None,
+    loaded: tuple[pd.DataFrame, pd.DataFrame, dict[str, int], Counter, int, dict[str, Any]] | None = None,
+) -> DatasetArtifacts:
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if loaded is None:
+        slide_df, case_df, label_to_id, missing_cases, num_h5_total, first_info = _load_h5_classification_slide_table(
+            dataset,
+            task,
+        )
+    else:
+        slide_df, case_df, label_to_id, missing_cases, num_h5_total, first_info = loaded
     slide_df["split"] = slide_df["case_id"].map(split_by_case)
     slide_df = slide_df.dropna(subset=["split"]).copy()
 
@@ -303,6 +330,8 @@ def prepare_dataset(
             .to_dict(),
         }
     )
+    if extra_metadata:
+        metadata.update(extra_metadata)
     metadata_json = output_dir / "metadata.json"
     with metadata_json.open("w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
@@ -404,7 +433,7 @@ def prepare_dataset_kfold(
                     .to_dict()
                 ),
             }
-        )
+    )
 
     h5_paths_csv = output_dir / "h5_paths.csv"
     pd.DataFrame({"h5_path": slide_df["slide_path"].astype(str)}).to_csv(h5_paths_csv, index=False)
@@ -416,6 +445,71 @@ def prepare_dataset_kfold(
             "folds": fold_summaries,
         }
     )
+    metadata_json = output_dir / "metadata.json"
+    with metadata_json.open("w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2)
+    slide_df.to_csv(output_dir / "slides_long.csv", index=False)
+    return KFoldArtifacts(fold_dirs=fold_dirs, metadata_json=metadata_json)
+
+
+def prepare_dataset_kfold_from_case_splits(
+    *,
+    dataset: DatasetSpec,
+    task: TaskSpec,
+    output_dir: str | Path,
+    fold_split_by_case: list[dict[str, str]],
+    extra_metadata: dict[str, Any] | None = None,
+) -> KFoldArtifacts:
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    slide_df, case_df, label_to_id, missing_cases, num_h5_total, first_info = _load_h5_classification_slide_table(
+        dataset,
+        task,
+    )
+    fold_dirs: list[Path] = []
+    fold_summaries: list[dict[str, Any]] = []
+    for fold_idx, split_by_case in enumerate(fold_split_by_case):
+        fold_slides = slide_df.copy()
+        fold_slides["split"] = fold_slides["case_id"].map(split_by_case)
+        fold_slides = fold_slides.dropna(subset=["split"]).copy()
+        fold_dir = output_dir / f"fold_{fold_idx}"
+        fold_dir.mkdir(parents=True, exist_ok=True)
+        _wide_split_csv(fold_slides).to_csv(fold_dir / "dataset.csv", index=False)
+        fold_slides.to_csv(fold_dir / "slides_long.csv", index=False)
+        fold_dirs.append(fold_dir)
+        fold_summaries.append(
+            {
+                "fold": fold_idx,
+                "dataset_csv": str(fold_dir / "dataset.csv"),
+                "case_counts": (
+                    case_df.assign(split=case_df["case_id"].map(split_by_case))
+                    .dropna(subset=["split"])
+                    .groupby(["split", "label_name"])
+                    .size()
+                    .unstack(fill_value=0)
+                    .to_dict()
+                ),
+                "slide_counts": (
+                    fold_slides.groupby(["split", "label_name"])
+                    .size()
+                    .unstack(fill_value=0)
+                    .to_dict()
+                ),
+            }
+        )
+
+    h5_paths_csv = output_dir / "h5_paths.csv"
+    pd.DataFrame({"h5_path": slide_df["slide_path"].astype(str)}).to_csv(h5_paths_csv, index=False)
+    metadata = _metadata_base(dataset, task, label_to_id, missing_cases, num_h5_total, slide_df, case_df, first_info)
+    metadata.update(
+        {
+            "n_splits": len(fold_split_by_case),
+            "val_fraction_of_train": task.cv_val_fraction_of_train,
+            "folds": fold_summaries,
+        }
+    )
+    if extra_metadata:
+        metadata.update(extra_metadata)
     metadata_json = output_dir / "metadata.json"
     with metadata_json.open("w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)

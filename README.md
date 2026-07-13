@@ -46,6 +46,14 @@ Generate a split plan and stop for confirmation:
   --config configs\cptac_brca_pam50.yaml
 ```
 
+After confirming the plan, pass it into execution so the split is locked:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli run-cv `
+  --config configs\cptac_brca_pam50.yaml `
+  --split-plan runs\cptac_brca_pam50\split_plan\split_plan.json
+```
+
 ```powershell
 & "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli prepare-cptac `
   --data-dir K:\cptac-brca `
@@ -156,6 +164,15 @@ adapters. See `docs/TASK_DATA_SPEC.md`.
 options before any baseline run. It prioritizes predefined external tests,
 center-aware holdout when center fields exist, and patient-level stratified
 n-fold CV for single-cohort datasets.
+
+Training commands can consume a confirmed plan:
+
+- `run-cv --split-plan ...` accepts `n_fold_cross_validation` plans.
+- `run-innovation-cv --split-plan ...` uses the same CV split for innovation experiments.
+- `run --split-plan ... --plan-id patient_stratified_holdout` accepts holdout/external/center plans.
+- `run-tree --split-plan ... --plan-id ...` accepts holdout/external/center plans.
+
+The selected plan is written into run metadata under `confirmed_split`.
 
 ## Manuscript Experiment Skill
 

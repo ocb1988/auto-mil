@@ -11,6 +11,7 @@ from typing import Any
 from .config import AutoMilConfig
 from .data import prepare_dataset_kfold
 from .log_analyzer import LogDiagnosis, diagnose_log_file, diagnosis_from_payload, write_diagnosis_json
+from .split_executor import materialize_kfold_from_split_plan, select_split_plan
 from .state import ExperimentCheckpoint, ResearchJournal, json_ready
 
 
@@ -241,6 +242,8 @@ def run_innovation_cv(
     variants: list[str],
     n_splits: int,
     epochs: int,
+    split_plan_path: Path | None = None,
+    split_plan_id: str | None = None,
     dry_run: bool = False,
     resume: bool = False,
 ) -> Path:
@@ -253,12 +256,24 @@ def run_innovation_cv(
     training = cfg.raw.get("training", {})
     search = cfg.raw.get("search", {})
 
-    artifacts = prepare_dataset_kfold(
-        dataset=dataset,
-        task=task,
-        output_dir=output_dir / "folds",
-        n_splits=n_splits,
-    )
+    selected_split = None
+    if split_plan_path is not None:
+        selected_split = select_split_plan(split_plan_path, split_plan_id)
+        artifacts = materialize_kfold_from_split_plan(
+            dataset=dataset,
+            task=task,
+            output_dir=output_dir / "folds",
+            split_plan_path=split_plan_path,
+            plan_id=split_plan_id,
+        )
+        n_splits = int(selected_split.plan.get("n_splits", n_splits))
+    else:
+        artifacts = prepare_dataset_kfold(
+            dataset=dataset,
+            task=task,
+            output_dir=output_dir / "folds",
+            n_splits=n_splits,
+        )
     metadata = json.loads(artifacts.metadata_json.read_text(encoding="utf-8"))
     checkpoint.update_metadata(
         command="run-innovation-cv",
@@ -266,6 +281,8 @@ def run_innovation_cv(
         n_splits=n_splits,
         metadata_json=str(artifacts.metadata_json),
         dry_run=dry_run,
+        split_plan=str(split_plan_path) if split_plan_path else None,
+        split_plan_id=selected_split.plan_id if selected_split else None,
     )
     in_dim_cfg = training.get("in_dim", "auto")
     in_dim = int(metadata["feature"]["in_dim"] if in_dim_cfg == "auto" else in_dim_cfg)

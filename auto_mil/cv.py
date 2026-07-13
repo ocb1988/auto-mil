@@ -10,6 +10,7 @@ from typing import Any
 from .config import AutoMilConfig
 from .data import prepare_dataset_kfold
 from .mil_baseline import Recipe, RunResult, run_recipe, run_result_from_payload, run_result_to_payload
+from .split_executor import materialize_kfold_from_split_plan, select_split_plan
 from .state import ExperimentCheckpoint, ResearchJournal
 
 
@@ -152,6 +153,8 @@ def run_case_level_cv(
     models: list[str] | None = None,
     n_splits: int = 5,
     epochs: int | None = None,
+    split_plan_path: Path | None = None,
+    split_plan_id: str | None = None,
     dry_run: bool = False,
     resume: bool = False,
 ) -> Path:
@@ -164,12 +167,24 @@ def run_case_level_cv(
     training = cfg.raw.get("training", {})
     search = cfg.raw.get("search", {})
 
-    artifacts = prepare_dataset_kfold(
-        dataset=dataset,
-        task=task,
-        output_dir=output_dir / "folds",
-        n_splits=n_splits,
-    )
+    selected_split = None
+    if split_plan_path is not None:
+        selected_split = select_split_plan(split_plan_path, split_plan_id)
+        artifacts = materialize_kfold_from_split_plan(
+            dataset=dataset,
+            task=task,
+            output_dir=output_dir / "folds",
+            split_plan_path=split_plan_path,
+            plan_id=split_plan_id,
+        )
+        n_splits = int(selected_split.plan.get("n_splits", n_splits))
+    else:
+        artifacts = prepare_dataset_kfold(
+            dataset=dataset,
+            task=task,
+            output_dir=output_dir / "folds",
+            n_splits=n_splits,
+        )
     metadata = _load_json(artifacts.metadata_json)
     checkpoint.update_metadata(
         command="run-cv",
@@ -177,6 +192,8 @@ def run_case_level_cv(
         n_splits=n_splits,
         metadata_json=str(artifacts.metadata_json),
         dry_run=dry_run,
+        split_plan=str(split_plan_path) if split_plan_path else None,
+        split_plan_id=selected_split.plan_id if selected_split else None,
     )
     journal.write("cv_dataset_prepared", {"metadata_json": str(artifacts.metadata_json), "metadata": metadata})
 

@@ -58,6 +58,15 @@ Review `split_plan.md` with the user. Confirm one plan before running
 manuscript-grade baselines, and do not change the split after inspecting test
 performance.
 
+After confirmation, execute with the confirmed plan:
+
+```powershell
+python -m auto_mil.cli run-cv --config configs\my_experiment.yaml --split-plan runs\my_experiment\split_plan\split_plan.json
+```
+
+Pass `--plan-id` explicitly when multiple plans are recommended or when the
+user chooses a non-default holdout plan.
+
 Survival:
 
 - preserve event/censor distribution

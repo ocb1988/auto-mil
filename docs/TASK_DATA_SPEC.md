@@ -64,6 +64,16 @@ This writes `split_plan.json` and `split_plan.md` under
 counts, optional center/cohort/external-test distributions, recommended plans,
 warnings, and a confirmation gate.
 
+After confirmation, pass the plan to execution:
+
+```powershell
+python -m auto_mil.cli run-cv --config configs\cptac_brca_pam50.yaml --split-plan runs\cptac_brca_pam50\split_plan\split_plan.json
+```
+
+Use `--plan-id` when multiple plans are recommended or when selecting a
+non-default holdout/pilot plan. The selected plan is stored in `metadata.json`
+as `confirmed_split`.
+
 ## Supported Now
 
 - task kind: `classification`
@@ -74,10 +84,11 @@ warnings, and a confirmation gate.
 - optional metadata: center, cohort, external-test indicator, coordinate key
 - split planning: predefined external-test, center-holdout, single-cohort
   stratified CV, and pilot train/val/test holdout
+- split execution: CV plans for `run-cv` and `run-innovation-cv`; holdout,
+  external-test, and center-holdout plans for `run` and `run-tree`
 
 ## Reserved Next
 
 - `prognosis` / `survival`: `time_column` and `event_column`
 - `regression`: `target_column`
-- execution adapters that consume a confirmed split plan directly
 - explicit slide manifest files through `slide_path_column`

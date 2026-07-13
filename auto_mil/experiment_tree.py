@@ -10,6 +10,7 @@ from .config import AutoMilConfig
 from .data import prepare_dataset
 from .failure_policy import action_to_payload, decide_failure_action, make_retry_recipe
 from .mil_baseline import Recipe, RunResult, run_recipe, run_result_from_payload, run_result_to_payload
+from .split_executor import materialize_holdout_from_split_plan, select_split_plan
 from .state import ExperimentCheckpoint, ResearchJournal, json_ready, now_iso
 
 
@@ -263,6 +264,8 @@ def run_qwbe_lite(
     max_screen_models: int | None = None,
     max_children_per_parent: int = 4,
     max_failure_retry_depth: int = 1,
+    split_plan_path: Path | None = None,
+    split_plan_id: str | None = None,
     dry_run: bool = False,
     resume: bool = False,
 ) -> Path:
@@ -274,11 +277,22 @@ def run_qwbe_lite(
 
     task = cfg.task_spec
     dataset = cfg.dataset_spec
-    artifacts = prepare_dataset(
-        dataset=dataset,
-        task=task,
-        output_dir=output_dir / "dataset",
-    )
+    selected_split = None
+    if split_plan_path is not None:
+        selected_split = select_split_plan(split_plan_path, split_plan_id)
+        artifacts = materialize_holdout_from_split_plan(
+            dataset=dataset,
+            task=task,
+            output_dir=output_dir / "dataset",
+            split_plan_path=split_plan_path,
+            plan_id=split_plan_id,
+        )
+    else:
+        artifacts = prepare_dataset(
+            dataset=dataset,
+            task=task,
+            output_dir=output_dir / "dataset",
+        )
     metadata = _load_metadata(artifacts.metadata_json)
     tree.metadata.update(
         {
@@ -288,6 +302,8 @@ def run_qwbe_lite(
             "max_runs": max_runs,
             "dry_run": dry_run,
             "max_failure_retry_depth": max_failure_retry_depth,
+            "split_plan": str(split_plan_path) if split_plan_path else None,
+            "split_plan_id": selected_split.plan_id if selected_split else None,
         }
     )
     checkpoint.update_metadata(
@@ -296,6 +312,8 @@ def run_qwbe_lite(
         dataset_csv=str(artifacts.dataset_csv),
         metadata_json=str(artifacts.metadata_json),
         dry_run=dry_run,
+        split_plan=str(split_plan_path) if split_plan_path else None,
+        split_plan_id=selected_split.plan_id if selected_split else None,
     )
     _seed_root_nodes(tree, cfg, max_screen_models)
     tree.save()

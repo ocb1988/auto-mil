@@ -13,6 +13,7 @@ runner interface.
 | Dataset-in research entry | `prepare_cptac_brca` scans H5 bags and clinical labels |
 | Task/data contract | `TaskSpec` and `DatasetSpec` normalize endpoint and feature inputs |
 | Split confirmation gate | `split_plan.json/md` proposes center/external/CV plans |
+| Split execution adapter | `split_executor.py` materializes confirmed plans |
 | Baseline stage gate | `baseline_screen` runs cheap MIL_BASELINE models |
 | QWBE-style candidate queue | `experiment_tree.json` with scored parent/child recipe nodes |
 | Stage journal | `research_journal.jsonl` append-only records |
@@ -43,22 +44,28 @@ runner interface.
    - prioritizes predefined external test, center-aware holdout, or n-fold CV
    - writes `split_plan.json` and `split_plan.md` for user confirmation
 
-4. `baseline_screen`
+4. `split_execution`
+   - training commands can consume `--split-plan` and optional `--plan-id`
+   - CV plans are materialized for `run-cv` and `run-innovation-cv`
+   - holdout/external/center plans are materialized for `run` and `run-tree`
+   - selected plans are recorded under `confirmed_split` in metadata
+
+5. `baseline_screen`
    - runs low-budget models such as `MEAN_MIL`, `MAX_MIL`, `AB_MIL`
    - stores one generated YAML per recipe
    - parses `Best_Log*.csv`
 
-5. `focused_runs`
+6. `focused_runs`
    - selects the best screened model as the anchor
    - expands learning-rate/dropout/balanced-sampler recipes
    - runs a longer budget
 
-6. `report`
+7. `report`
    - ranks all completed runs by `test_macro_auc`, falling back to
      `val_macro_auc`
    - records exact commands and artifact paths
 
-7. `experiment_tree`
+8. `experiment_tree`
    - seeds root nodes from candidate baseline models
    - executes pending nodes selected by a QWBE-lite score
    - expands high-scoring root nodes into focused hyperparameter children
@@ -169,10 +176,13 @@ The planner is deliberately separate from execution. It should be reviewed and
 confirmed before baseline runs so later autonomous loops cannot silently change
 the data split after seeing results.
 
+`split_executor.py` is the bridge after confirmation. It reads `split_plan.json`,
+selects a plan by id or the single recommended plan, materializes the concrete
+MIL_BASELINE CSVs, and records the selected plan in `metadata.json`.
+
 ## Next Extensions
 
 - Add an LLM proposal stage that writes `ExperimentNode` objects from literature/context.
-- Add split execution adapters that consume a confirmed split plan directly.
 - Add spatial recipe families for `DAG_MIL`, `PSA_MIL`, `SC_MIL`, and
   coordinate-aware models.
 - Add seed sweeps and statistical comparison across top recipes.

@@ -8,6 +8,7 @@ from typing import Any
 from .config import AutoMilConfig
 from .data import prepare_dataset
 from .mil_baseline import Recipe, RunResult, run_recipe, run_result_from_payload, run_result_to_payload
+from .split_executor import materialize_holdout_from_split_plan, select_split_plan
 from .state import ExperimentCheckpoint, ResearchJournal, now_iso
 
 
@@ -169,6 +170,8 @@ def run_autonomous_research(
     *,
     max_screen_runs: int | None = None,
     max_focused_runs: int | None = None,
+    split_plan_path: Path | None = None,
+    split_plan_id: str | None = None,
     dry_run: bool = False,
     resume: bool = False,
 ) -> Path:
@@ -179,11 +182,22 @@ def run_autonomous_research(
 
     task = cfg.task_spec
     dataset = cfg.dataset_spec
-    artifacts = prepare_dataset(
-        dataset=dataset,
-        task=task,
-        output_dir=output_dir,
-    )
+    selected_split = None
+    if split_plan_path is not None:
+        selected_split = select_split_plan(split_plan_path, split_plan_id)
+        artifacts = materialize_holdout_from_split_plan(
+            dataset=dataset,
+            task=task,
+            output_dir=output_dir,
+            split_plan_path=split_plan_path,
+            plan_id=split_plan_id,
+        )
+    else:
+        artifacts = prepare_dataset(
+            dataset=dataset,
+            task=task,
+            output_dir=output_dir,
+        )
     metadata = _load_metadata(artifacts.metadata_json)
     checkpoint.update_metadata(
         command="run",
@@ -191,6 +205,8 @@ def run_autonomous_research(
         dataset_csv=str(artifacts.dataset_csv),
         metadata_json=str(artifacts.metadata_json),
         dry_run=dry_run,
+        split_plan=str(split_plan_path) if split_plan_path else None,
+        split_plan_id=selected_split.plan_id if selected_split else None,
     )
     journal.write(
         "dataset_audit",
