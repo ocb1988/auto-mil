@@ -16,6 +16,7 @@ runner interface.
 | Split execution adapter | `split_executor.py` materializes confirmed plans |
 | Baseline family planner | `baseline_families.py` assesses method fit and requirements |
 | Statistical analysis | `stats_analysis.py` summarizes folds/seeds and paired tests |
+| Ablation runner | `ablation.py` executes component-isolation matrices |
 | Baseline stage gate | `baseline_screen` runs cheap MIL_BASELINE models |
 | QWBE-style candidate queue | `experiment_tree.json` with scored parent/child recipe nodes |
 | Stage journal | `research_journal.jsonl` append-only records |
@@ -73,12 +74,17 @@ runner interface.
    - reports mean, standard deviation, 95% CI, and paired comparisons
    - writes `stats_report.json` and `stats_report.md`
 
-9. `report`
+9. `ablation`
+   - `run-ablation-cv` executes baseline, single-component, and full-method rows
+   - uses the confirmed CV split and checkpoint/resume
+   - writes `ablation_cv_report.md`
+
+10. `report`
    - ranks all completed runs by `test_macro_auc`, falling back to
      `val_macro_auc`
    - records exact commands and artifact paths
 
-10. `experiment_tree`
+11. `experiment_tree`
    - seeds root nodes from candidate baseline models
    - executes pending nodes selected by a QWBE-lite score
    - expands high-scoring root nodes into focused hyperparameter children
@@ -208,6 +214,19 @@ dependencies such as `scipy` or `sklearn` without installing anything.
 paired comparisons to a chosen baseline over common folds. If `scipy` is
 available, paired t-test and Wilcoxon p-values are reported; otherwise the
 report still includes descriptive statistics and confidence intervals.
+
+## Ablation Runner
+
+`ablation.py` currently targets the custom AB_MIL innovation path. The default
+matrix isolates class-balanced focal loss and a prototype auxiliary head:
+
+- `AB_MIL_CE`
+- `AB_MIL_FOCAL`
+- `AB_MIL_PROTO`
+- `AB_MIL_FOCAL_PROTO`
+
+The runner uses the same fold materialization and checkpoint policy as baseline
+CV so the ablation table is comparable to the main experiment.
 
 ## Next Extensions
 

@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .ablation import run_ablation_cv
 from .config import load_config
 from .baseline_registry import available_models, resolve_mil_baseline_dir
 from .baseline_families import baseline_plan_to_payload, build_baseline_plan, write_baseline_plan
@@ -137,6 +138,22 @@ def cmd_run_innovation_cv(args: argparse.Namespace) -> None:
     cfg = load_config(args.config)
     variants = args.variants.split(",")
     report = run_innovation_cv(
+        cfg,
+        variants=variants,
+        n_splits=args.n_splits,
+        epochs=args.epochs,
+        split_plan_path=Path(args.split_plan) if args.split_plan else None,
+        split_plan_id=args.plan_id,
+        dry_run=args.dry_run,
+        resume=args.resume,
+    )
+    print(f"report={report}")
+
+
+def cmd_run_ablation_cv(args: argparse.Namespace) -> None:
+    cfg = load_config(args.config)
+    variants = args.variants.split(",") if args.variants else None
+    report = run_ablation_cv(
         cfg,
         variants=variants,
         n_splits=args.n_splits,
@@ -319,6 +336,21 @@ def build_parser() -> argparse.ArgumentParser:
     innovation.add_argument("--dry-run", action="store_true")
     innovation.add_argument("--resume", action="store_true", help="Reuse completed runs from checkpoint.json")
     innovation.set_defaults(func=cmd_run_innovation_cv)
+
+    ablation = sub.add_parser("run-ablation-cv", help="Run AB_MIL innovation ablation k-fold CV")
+    ablation.add_argument("--config", required=True)
+    ablation.add_argument("--n-splits", type=int, default=5)
+    ablation.add_argument("--epochs", type=int, default=3)
+    ablation.add_argument(
+        "--variants",
+        default=None,
+        help="Comma-separated variants; default is AB_MIL_CE,AB_MIL_FOCAL,AB_MIL_PROTO,AB_MIL_FOCAL_PROTO",
+    )
+    ablation.add_argument("--split-plan", default=None, help="Confirmed split_plan.json for CV plans")
+    ablation.add_argument("--plan-id", default=None, help="Plan id inside split_plan.json")
+    ablation.add_argument("--dry-run", action="store_true")
+    ablation.add_argument("--resume", action="store_true", help="Reuse completed runs from checkpoint.json")
+    ablation.set_defaults(func=cmd_run_ablation_cv)
 
     tree = sub.add_parser("run-tree", help="Run QWBE-lite experiment-tree search")
     tree.add_argument("--config", required=True)

@@ -70,6 +70,14 @@ After CV finishes, compute statistical summaries:
   --baseline AB_MIL
 ```
 
+Run the default innovation ablation matrix:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli run-ablation-cv `
+  --config configs\cptac_brca_pam50.yaml `
+  --split-plan runs\cptac_brca_pam50\split_plan\split_plan.json
+```
+
 ```powershell
 & "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli prepare-cptac `
   --data-dir K:\cptac-brca `
@@ -203,6 +211,13 @@ compatible.
 `analyze-stats` reads completed fold/seed runs from `checkpoint.json` and writes
 `stats_report.json/md` with mean, standard deviation, 95% confidence intervals,
 and paired comparisons against a chosen baseline when common folds exist.
+
+## Ablation Runner
+
+`run-ablation-cv` runs a fixed AB_MIL innovation matrix on the confirmed CV
+split: cross-entropy baseline, focal loss only, prototype head only, and the
+full focal-plus-prototype method. It writes `ablation_cv_report.md` and a
+checkpoint for resume.
 
 ## Manuscript Experiment Skill
 

@@ -331,7 +331,11 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--dataset-csv", required=True)
     parser.add_argument("--mil-baseline-dir", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--variant", required=True, choices=["AB_MIL_FOCAL", "AB_MIL_FOCAL_PROTO"])
+    parser.add_argument(
+        "--variant",
+        required=True,
+        choices=["AB_MIL_CE", "AB_MIL_FOCAL", "AB_MIL_PROTO", "AB_MIL_FOCAL_PROTO"],
+    )
     parser.add_argument("--num-classes", type=int, required=True)
     parser.add_argument("--in-dim", type=int, required=True)
     parser.add_argument("--epochs", type=int, default=3)

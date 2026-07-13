@@ -114,3 +114,12 @@ For a method with two innovations A and B:
 | Full | yes | yes | final method |
 
 Keep training budget and split identical. If runtime is tight, use the best fold or a small pilot only after stating the limitation.
+
+When using this repo for the current AB_MIL innovation path:
+
+```powershell
+python -m auto_mil.cli run-ablation-cv --config configs\my_experiment.yaml --split-plan runs\my_experiment\split_plan\split_plan.json
+```
+
+The default matrix runs cross-entropy baseline, focal loss only, prototype head
+only, and focal-plus-prototype full method on the confirmed CV split.
