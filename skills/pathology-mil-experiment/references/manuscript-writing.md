@@ -38,9 +38,17 @@ Generate the first evidence-indexed draft with:
 python -m auto_mil.cli write-manuscript --root runs\my_experiment --config configs\my_experiment.yaml
 ```
 
+Then package the draft for polishing and submission checks:
+
+```powershell
+python -m auto_mil.cli package-manuscript --root runs\my_experiment --profile generic-pathology-ai --target-journal "target journal name"
+```
+
 Treat `manuscript/manuscript_draft.md` as a scaffold, not a final paper section.
 Use its warnings and claim guardrails to decide which experiments, statistics,
-or figures are still missing before polishing the prose.
+or figures are still missing before polishing the prose. Treat
+`manuscript/package/llm_polish_prompt.md` as an evidence-bounded prompt: do not
+allow the polishing step to add claims not supported by the evidence manifest.
 
 ## Tone
 

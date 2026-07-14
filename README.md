@@ -103,6 +103,15 @@ Draft manuscript Methods/Results from the collected evidence artifacts:
   --config configs\cptac_brca_pam50.yaml
 ```
 
+Package the draft for polishing and submission checks:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli package-manuscript `
+  --root runs\cptac_brca_pam50 `
+  --profile generic-pathology-ai `
+  --target-journal "target journal name"
+```
+
 Run the default innovation ablation matrix:
 
 ```powershell
@@ -306,6 +315,16 @@ statistical reports, prediction reports, figure reports, and ablation reports
 when present, and emits warnings for missing or dry-run-only evidence. The draft
 is intentionally conservative: it scaffolds Methods/Results text and claim
 guardrails without inventing unsupported performance claims.
+
+## Manuscript Package
+
+`package-manuscript` turns the draft and evidence manifest into a polishing
+work package under `manuscript/package/`: `methods_results_package.md`,
+`llm_polish_prompt.md`, `submission_checklist.md`, and
+`manuscript_package.json`. Profiles include `generic-pathology-ai`,
+`structured-medical-ai`, and `methods-results-only`. A named target journal is
+treated as a free-text style label; current author instructions should still be
+checked before submission.
 
 ## Ablation Runner
 

@@ -21,6 +21,7 @@ runner interface.
 | Figure report | `figure_report.py` writes manuscript figures and error tables |
 | Ablation runner | `ablation.py` executes component-isolation matrices |
 | Manuscript writer | `manuscript_writer.py` drafts Methods/Results from evidence artifacts |
+| Manuscript package | `manuscript_package.py` prepares polishing prompts and submission checks |
 | Time-boxed autonomous loop | `autonomous_window.py` executes approved rounds |
 | Proposal generator | `proposal_generator.py` writes candidate tree nodes |
 | Baseline stage gate | `baseline_screen` runs cheap MIL_BASELINE models |
@@ -113,12 +114,19 @@ runner interface.
      `manuscript_draft.md`
    - records missing-evidence warnings instead of fabricating claims
 
-14. `report`
+14. `manuscript_packaging`
+   - `package-manuscript` reads the draft and evidence manifest
+   - writes a Methods/Results package, LLM polish prompt, submission checklist,
+     and `manuscript_package.json`
+   - treats target journal names as free-text style labels until current author
+     instructions are verified
+
+15. `report`
    - ranks all completed runs by `test_macro_auc`, falling back to
      `val_macro_auc`
    - records exact commands and artifact paths
 
-15. `experiment_tree`
+16. `experiment_tree`
    - seeds root nodes from candidate baseline models
    - executes pending nodes selected by a QWBE-lite score
    - expands high-scoring root nodes into focused hyperparameter children
@@ -327,6 +335,22 @@ It writes `manuscript_evidence.json` for auditability and
 bounded by the discovered evidence: incomplete or dry-run artifacts become
 explicit warnings and limitations rather than unsupported claims.
 
+## Manuscript Package
+
+`manuscript_package.py` is the handoff layer from evidence-bounded draft to
+polishing and submission preparation. It reads `manuscript_draft.md` and
+`manuscript_evidence.json`, then writes:
+
+- `methods_results_package.md`
+- `llm_polish_prompt.md`
+- `submission_checklist.md`
+- `manuscript_package.json`
+
+Built-in profiles are internal drafting profiles, not live journal rule
+snapshots. If a target journal is provided, it is recorded as a free-text style
+label and the package reminds the user to verify current author instructions
+before final submission.
+
 ## Ablation Runner
 
 `ablation.py` currently targets the custom AB_MIL innovation path. The default
@@ -379,5 +403,5 @@ results, and code context.
   objects as the deterministic proposal generator.
 - Add automatic recipe overrides from baseline family risk profiles.
 - Add seed-sweep execution policies on top of the statistical reporting module.
-- Add journal-specific templates, LLM polishing, and DOCX/PDF export on top of
-  the evidence-indexed manuscript draft.
+- Add live journal-rule adapters plus DOCX/PDF export on top of the manuscript
+  package.

@@ -16,6 +16,7 @@ from .failure_policy import action_to_payload, decide_failure_action
 from .figure_report import build_figure_report
 from .innovation_cv import run_innovation_cv
 from .log_analyzer import diagnose_log_file, diagnosis_to_payload
+from .manuscript_package import available_manuscript_profiles, package_manuscript
 from .manuscript_writer import write_manuscript_draft
 from .prediction_aggregator import aggregate_predictions
 from .proposal_generator import propose_nodes
@@ -422,6 +423,30 @@ def cmd_write_manuscript(args: argparse.Namespace) -> None:
         print(f"warning={warning}")
 
 
+def cmd_package_manuscript(args: argparse.Namespace) -> None:
+    package, manifest_path = package_manuscript(
+        args.root,
+        draft_path=Path(args.draft) if args.draft else None,
+        evidence_path=Path(args.evidence) if args.evidence else None,
+        output_dir=Path(args.output_dir) if args.output_dir else None,
+        profile=args.profile,
+        target_journal=args.target_journal,
+    )
+    if args.json:
+        from dataclasses import asdict
+
+        from .state import json_ready
+
+        print(json.dumps(json_ready(asdict(package)), indent=2, ensure_ascii=True))
+        return
+    print(f"manuscript_package={manifest_path}")
+    for name, path in package.outputs.items():
+        if name != "manifest":
+            print(f"{name}={path}")
+    for warning in package.warnings:
+        print(f"warning={warning}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Autonomous MIL research runner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -605,6 +630,16 @@ def build_parser() -> argparse.ArgumentParser:
     manuscript.add_argument("--primary-metric", default="test_macro_auc")
     manuscript.add_argument("--json", action="store_true", help="Print JSON payload")
     manuscript.set_defaults(func=cmd_write_manuscript)
+
+    package = sub.add_parser("package-manuscript", help="Package a manuscript draft for polishing and submission checks")
+    package.add_argument("--root", required=True, help="Run root containing manuscript artifacts")
+    package.add_argument("--draft", default=None, help="Optional manuscript_draft.md path")
+    package.add_argument("--evidence", default=None, help="Optional manuscript_evidence.json path")
+    package.add_argument("--output-dir", default=None, help="Directory for package artifacts")
+    package.add_argument("--profile", choices=available_manuscript_profiles(), default="generic-pathology-ai")
+    package.add_argument("--target-journal", default=None, help="Free-text target journal/style label")
+    package.add_argument("--json", action="store_true", help="Print JSON payload")
+    package.set_defaults(func=cmd_package_manuscript)
 
     return parser
 
