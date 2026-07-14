@@ -15,6 +15,7 @@ from .experiment_tree import run_qwbe_lite
 from .failure_policy import action_to_payload, decide_failure_action
 from .innovation_cv import run_innovation_cv
 from .log_analyzer import diagnose_log_file, diagnosis_to_payload
+from .prediction_aggregator import aggregate_predictions
 from .proposal_generator import propose_nodes
 from .research import run_autonomous_research
 from .result_collector import collect_results, write_result_bundle
@@ -344,6 +345,33 @@ def cmd_collect_results(args: argparse.Namespace) -> None:
         print(f"warning={warning}")
 
 
+def cmd_aggregate_predictions(args: argparse.Namespace) -> None:
+    prediction_paths = [Path(path) for path in args.prediction] if args.prediction else None
+    bundle, slide_csv, case_csv, metrics_json, report_md = aggregate_predictions(
+        args.root,
+        prediction_paths=prediction_paths,
+        output_dir=Path(args.output_dir) if args.output_dir else None,
+        case_id_regex=args.case_id_regex,
+        aggregation=args.aggregation,
+    )
+    if args.json:
+        from dataclasses import asdict
+
+        from .state import json_ready
+
+        print(json.dumps(json_ready(asdict(bundle)), indent=2, ensure_ascii=True))
+        return
+    print(f"slide_predictions={slide_csv}")
+    print(f"case_predictions={case_csv}")
+    print(f"case_metrics={metrics_json}")
+    print(f"prediction_report={report_md}")
+    print(f"prediction_files={len(bundle.prediction_files)}")
+    print(f"slide_predictions_n={bundle.num_slide_predictions}")
+    print(f"case_predictions_n={bundle.num_case_predictions}")
+    for warning in bundle.warnings:
+        print(f"warning={warning}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Autonomous MIL research runner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -500,6 +528,15 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--completed-only", action="store_true", help="Exclude failed and dry-run records")
     collect.add_argument("--json", action="store_true", help="Print JSON payload")
     collect.set_defaults(func=cmd_collect_results)
+
+    aggregate = sub.add_parser("aggregate-predictions", help="Aggregate slide-level prediction CSVs to case level")
+    aggregate.add_argument("--root", required=True, help="Run root or prediction CSV path")
+    aggregate.add_argument("--prediction", action="append", default=None, help="Specific prediction CSV path; repeatable")
+    aggregate.add_argument("--output-dir", default=None, help="Directory for slide/case prediction artifacts")
+    aggregate.add_argument("--case-id-regex", default=r"^(?P<case>[A-Za-z0-9]+)-")
+    aggregate.add_argument("--aggregation", choices=["mean", "median", "max"], default="mean")
+    aggregate.add_argument("--json", action="store_true", help="Print JSON payload")
+    aggregate.set_defaults(func=cmd_aggregate_predictions)
 
     return parser
 

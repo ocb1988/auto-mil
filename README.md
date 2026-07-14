@@ -78,6 +78,14 @@ Collect all experiment checkpoints into manuscript-ready result tables:
   --primary-metric test_macro_auc
 ```
 
+Aggregate slide-level prediction CSVs to patient/case level:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli aggregate-predictions `
+  --root runs\cptac_brca_pam50 `
+  --aggregation mean
+```
+
 Run the default innovation ablation matrix:
 
 ```powershell
@@ -248,6 +256,15 @@ and paired comparisons against a chosen baseline when common folds exist.
 stable result bundle for manuscript drafting: `results_index.json`, `runs.csv`,
 `model_summary.csv`, and `manuscript_results.md`. It can include failed records
 for auditability or use `--completed-only` for clean result tables.
+
+## Prediction Aggregation
+
+`aggregate-predictions` reads slide-level prediction CSVs and aggregates
+multiple slides from the same patient/case into case-level probabilities. It
+writes `slide_predictions.csv`, `case_predictions.csv`, `case_metrics.json`, and
+`prediction_report.md`. The custom AB_MIL innovation runner writes
+`train_predictions.csv`, `val_predictions.csv`, and `test_predictions.csv`
+automatically after non-dry-run training.
 
 ## Ablation Runner
 

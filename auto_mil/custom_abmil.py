@@ -216,6 +216,41 @@ def evaluate(
     return float(np.mean(losses)), cal_scores(probs, labels, cfg.num_classes)
 
 
+def write_predictions(
+    model: nn.Module,
+    dataset: WideWSIDataset,
+    *,
+    output_path: Path,
+    split: str,
+    cfg: TrainConfig,
+    device: torch.device,
+) -> Path:
+    model.eval()
+    rows: list[dict[str, Any]] = []
+    with torch.no_grad():
+        for idx in range(len(dataset)):
+            bag, label = dataset[idx]
+            logits = model(bag.unsqueeze(0).to(device))["logits"]
+            prob = F.softmax(logits, dim=1).squeeze(0).cpu().numpy()
+            row: dict[str, Any] = {
+                "run_id": f"{cfg.variant}_{split}",
+                "model_name": cfg.variant,
+                "split": split,
+                "slide_path": dataset.slide_paths[idx],
+                "slide_id": Path(dataset.slide_paths[idx]).stem,
+                "y_true": int(label.item()),
+                "y_pred": int(prob.argmax()),
+            }
+            for class_idx, value in enumerate(prob.tolist()):
+                row[f"prob_{class_idx}"] = float(value)
+            rows.append(row)
+    with output_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()) if rows else ["run_id", "model_name", "split"])
+        writer.writeheader()
+        writer.writerows(rows)
+    return output_path
+
+
 def train(cfg: TrainConfig) -> Path:
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
     set_seed(cfg.seed)
@@ -255,6 +290,7 @@ def train(cfg: TrainConfig) -> Path:
 
     rows: list[dict[str, Any]] = []
     best_row: dict[str, Any] | None = None
+    best_model_state: dict[str, torch.Tensor] | None = None
     best_auc = float("-inf")
     for epoch in range(1, cfg.epochs + 1):
         model.train()
@@ -294,6 +330,7 @@ def train(cfg: TrainConfig) -> Path:
         if auc > best_auc:
             best_auc = auc
             best_row = row.copy()
+            best_model_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
             torch.save(model.state_dict(), cfg.output_dir / f"Best_EPOCH_{epoch}.pth")
 
     torch.save(model.state_dict(), cfg.output_dir / f"Last_EPOCH_{cfg.epochs}.pth")
@@ -308,6 +345,18 @@ def train(cfg: TrainConfig) -> Path:
             writer = csv.DictWriter(f, fieldnames=list(best_row.keys()))
             writer.writeheader()
             writer.writerow(best_row)
+    if best_model_state is not None:
+        model.load_state_dict(best_model_state)
+        model.to(device)
+        for split, dataset in (("train", train_set), ("val", val_set), ("test", test_set)):
+            write_predictions(
+                model,
+                dataset,
+                output_path=cfg.output_dir / f"{split}_predictions.csv",
+                split=split,
+                cfg=cfg,
+                device=device,
+            )
     metadata = {
         "variant": cfg.variant,
         "dataset_csv": str(cfg.dataset_csv),
