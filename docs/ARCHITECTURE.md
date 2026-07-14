@@ -16,6 +16,7 @@ runner interface.
 | Split execution adapter | `split_executor.py` materializes confirmed plans |
 | Baseline family planner | `baseline_families.py` assesses method fit and requirements |
 | Statistical analysis | `stats_analysis.py` summarizes folds/seeds and paired tests |
+| Result artifact layer | `result_collector.py` consolidates checkpoints into tables |
 | Ablation runner | `ablation.py` executes component-isolation matrices |
 | Time-boxed autonomous loop | `autonomous_window.py` executes approved rounds |
 | Proposal generator | `proposal_generator.py` writes candidate tree nodes |
@@ -71,34 +72,40 @@ runner interface.
    - expands learning-rate/dropout/balanced-sampler recipes
    - runs a longer budget
 
-8. `statistical_analysis`
+8. `result_collection`
+   - `collect-results` discovers checkpoints under the run root
+   - writes `results_index.json`, `runs.csv`, `model_summary.csv`, and
+     `manuscript_results.md`
+   - keeps failed/dry-run records visible unless `--completed-only` is used
+
+9. `statistical_analysis`
    - `analyze-stats` reads completed checkpoint runs
    - reports mean, standard deviation, 95% CI, and paired comparisons
    - writes `stats_report.json` and `stats_report.md`
 
-9. `ablation`
+10. `ablation`
    - `run-ablation-cv` executes baseline, single-component, and full-method rows
    - uses the confirmed CV split and checkpoint/resume
    - writes `ablation_cv_report.md`
 
-10. `report`
+11. `report`
    - ranks all completed runs by `test_macro_auc`, falling back to
      `val_macro_auc`
    - records exact commands and artifact paths
 
-11. `experiment_tree`
+12. `experiment_tree`
    - seeds root nodes from candidate baseline models
    - executes pending nodes selected by a QWBE-lite score
    - expands high-scoring root nodes into focused hyperparameter children
    - creates conservative retry children for selected failure categories
    - writes `experiment_tree.json` and `experiment_tree.md`
 
-12. `proposal_generation`
+13. `proposal_generation`
    - `propose-nodes` reads baseline plans, checkpoints, and the experiment tree
    - writes auditable candidate nodes and `proposal_report.md`
    - supports preview mode before modifying the tree
 
-13. `autonomous_window`
+14. `autonomous_window`
    - runs one tree node per approved round
    - can call the proposal generator when no pending nodes remain
    - stops on wall-clock budget, run budget, target metric, or no pending nodes
@@ -228,6 +235,21 @@ paired comparisons to a chosen baseline over common folds. If `scipy` is
 available, paired t-test and Wilcoxon p-values are reported; otherwise the
 report still includes descriptive statistics and confidence intervals.
 
+## Result Collector
+
+`result_collector.py` is the manuscript-facing artifact layer. It discovers
+`checkpoint.json` files under a project run root, normalizes both MIL_BASELINE
+recipe payloads and custom innovation payloads, and writes:
+
+- `results_index.json`: complete structured run inventory
+- `runs.csv`: one row per run/fold/variant with artifact paths and diagnoses
+- `model_summary.csv`: model-level mean/std/min/max metrics
+- `manuscript_results.md`: ranked primary-metric table plus run inventory
+
+This layer deliberately reads checkpoints rather than raw stdout logs, so it
+inherits the same resume, failure diagnosis, and provenance contracts as the
+training commands.
+
 ## Ablation Runner
 
 `ablation.py` currently targets the custom AB_MIL innovation path. The default
@@ -282,4 +304,5 @@ results, and code context.
 - Add seed-sweep execution policies on top of the statistical reporting module.
 - Add case-level prediction aggregation for datasets with multiple slides per
   patient.
-- Add paper-style report generation once experiment evidence is substantial.
+- Add paper-style narrative generation from `manuscript_results.md`,
+  `stats_report.md`, and ablation reports once evidence is substantial.

@@ -17,6 +17,7 @@ from .innovation_cv import run_innovation_cv
 from .log_analyzer import diagnose_log_file, diagnosis_to_payload
 from .proposal_generator import propose_nodes
 from .research import run_autonomous_research
+from .result_collector import collect_results, write_result_bundle
 from .split_planner import plan_splits, split_plan_to_payload, write_split_plan
 from .specs import describe_capabilities, specs_to_payload
 from .stats_analysis import build_stats_report, stats_report_to_payload, write_stats_report
@@ -314,6 +315,35 @@ def cmd_analyze_stats(args: argparse.Namespace) -> None:
         print(f"warning={warning}")
 
 
+def cmd_collect_results(args: argparse.Namespace) -> None:
+    root = Path(args.root)
+    checkpoints = [Path(path) for path in args.checkpoint] if args.checkpoint else None
+    bundle = collect_results(
+        root,
+        checkpoint_paths=checkpoints,
+        primary_metric=args.primary_metric,
+        metrics=args.metrics.split(",") if args.metrics else None,
+        include_failed=not args.completed_only,
+    )
+    output_dir = Path(args.output_dir) if args.output_dir else root / "results"
+    json_path, runs_csv, summary_csv, report_md = write_result_bundle(bundle, output_dir)
+    if args.json:
+        from dataclasses import asdict
+
+        from .state import json_ready
+
+        print(json.dumps(json_ready(asdict(bundle)), indent=2, ensure_ascii=True))
+        return
+    print(f"results_index={json_path}")
+    print(f"runs_csv={runs_csv}")
+    print(f"model_summary_csv={summary_csv}")
+    print(f"manuscript_results={report_md}")
+    print(f"checkpoints={len(bundle.checkpoints)}")
+    print(f"runs={len(bundle.runs)}")
+    for warning in bundle.warnings:
+        print(f"warning={warning}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Autonomous MIL research runner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -460,6 +490,16 @@ def build_parser() -> argparse.ArgumentParser:
     stats.add_argument("--output-dir", default=None, help="Directory for stats_report.json/md")
     stats.add_argument("--json", action="store_true", help="Print JSON payload")
     stats.set_defaults(func=cmd_analyze_stats)
+
+    collect = sub.add_parser("collect-results", help="Collect checkpoints into manuscript-ready result tables")
+    collect.add_argument("--root", required=True, help="Run root containing checkpoint.json files")
+    collect.add_argument("--checkpoint", action="append", default=None, help="Specific checkpoint.json path; repeatable")
+    collect.add_argument("--primary-metric", default="test_macro_auc")
+    collect.add_argument("--metrics", default=None, help="Comma-separated metrics to collect")
+    collect.add_argument("--output-dir", default=None, help="Directory for results_index/runs/model_summary/report")
+    collect.add_argument("--completed-only", action="store_true", help="Exclude failed and dry-run records")
+    collect.add_argument("--json", action="store_true", help="Print JSON payload")
+    collect.set_defaults(func=cmd_collect_results)
 
     return parser
 

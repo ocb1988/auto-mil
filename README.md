@@ -70,6 +70,14 @@ After CV finishes, compute statistical summaries:
   --baseline AB_MIL
 ```
 
+Collect all experiment checkpoints into manuscript-ready result tables:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli collect-results `
+  --root runs\cptac_brca_pam50 `
+  --primary-metric test_macro_auc
+```
+
 Run the default innovation ablation matrix:
 
 ```powershell
@@ -233,6 +241,13 @@ compatible.
 `analyze-stats` reads completed fold/seed runs from `checkpoint.json` and writes
 `stats_report.json/md` with mean, standard deviation, 95% confidence intervals,
 and paired comparisons against a chosen baseline when common folds exist.
+
+## Result Collector
+
+`collect-results` discovers `checkpoint.json` files under a run root and writes a
+stable result bundle for manuscript drafting: `results_index.json`, `runs.csv`,
+`model_summary.csv`, and `manuscript_results.md`. It can include failed records
+for auditability or use `--completed-only` for clean result tables.
 
 ## Ablation Runner
 
