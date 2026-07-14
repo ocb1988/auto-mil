@@ -24,6 +24,14 @@ Order:
 5. Qualitative analysis if available, such as attention heatmaps.
 6. Error analysis and limitations.
 
+When using this repo, prefer generated evidence artifacts:
+
+- `manuscript_results.md` and `model_summary.csv` for main result tables
+- `stats_report.md` for confidence intervals and paired comparisons
+- `prediction_report.md` and `case_predictions.csv` for case-level predictions
+- `figure_report.md`, `per_class_metrics.csv`, and `error_cases.csv` for
+  ROC/confusion matrix/calibration/error analysis claims
+
 ## Tone
 
 Use precise claims:
@@ -50,4 +58,3 @@ Avoid unsupported claims:
 ## Ablation Text Template
 
 "To assess the contribution of each component, we removed [component A] and [component B] from the full model while keeping the same data split, training budget, and evaluation protocol. Removing [component] reduced [metric] from [full] to [ablated], suggesting that [interpretation]."
-

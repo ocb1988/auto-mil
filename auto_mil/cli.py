@@ -13,6 +13,7 @@ from .data import prepare_cptac_brca
 from .cv import run_case_level_cv
 from .experiment_tree import run_qwbe_lite
 from .failure_policy import action_to_payload, decide_failure_action
+from .figure_report import build_figure_report
 from .innovation_cv import run_innovation_cv
 from .log_analyzer import diagnose_log_file, diagnosis_to_payload
 from .prediction_aggregator import aggregate_predictions
@@ -373,6 +374,31 @@ def cmd_aggregate_predictions(args: argparse.Namespace) -> None:
         print(f"warning={warning}")
 
 
+def cmd_build_figures(args: argparse.Namespace) -> None:
+    case_predictions = Path(args.case_predictions) if args.case_predictions else Path(args.root) / "prediction_aggregation" / "case_predictions.csv"
+    class_names = args.class_names.split(",") if args.class_names else None
+    report, json_path, md_path = build_figure_report(
+        case_predictions,
+        output_dir=Path(args.output_dir) if args.output_dir else None,
+        class_names=class_names,
+        positive_class=args.positive_class,
+    )
+    if args.json:
+        from dataclasses import asdict
+
+        from .state import json_ready
+
+        print(json.dumps(json_ready(asdict(report)), indent=2, ensure_ascii=True))
+        return
+    print(f"figure_report_json={json_path}")
+    print(f"figure_report_md={md_path}")
+    print(f"artifacts={len(report.artifacts)}")
+    for item in report.artifacts:
+        print(f"  {item.name}={item.path}")
+    for warning in report.warnings:
+        print(f"warning={warning}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Autonomous MIL research runner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -538,6 +564,15 @@ def build_parser() -> argparse.ArgumentParser:
     aggregate.add_argument("--aggregation", choices=["mean", "median", "max"], default="mean")
     aggregate.add_argument("--json", action="store_true", help="Print JSON payload")
     aggregate.set_defaults(func=cmd_aggregate_predictions)
+
+    figures = sub.add_parser("build-figures", help="Build manuscript figures from case-level predictions")
+    figures.add_argument("--root", default=".", help="Run root used when --case-predictions is omitted")
+    figures.add_argument("--case-predictions", default=None, help="case_predictions.csv path")
+    figures.add_argument("--output-dir", default=None, help="Directory for figure PNGs and tables")
+    figures.add_argument("--class-names", default=None, help="Comma-separated class names indexed by class id")
+    figures.add_argument("--positive-class", type=int, default=1, help="Positive class for binary ROC/calibration")
+    figures.add_argument("--json", action="store_true", help="Print JSON payload")
+    figures.set_defaults(func=cmd_build_figures)
 
     return parser
 

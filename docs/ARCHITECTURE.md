@@ -18,6 +18,7 @@ runner interface.
 | Statistical analysis | `stats_analysis.py` summarizes folds/seeds and paired tests |
 | Result artifact layer | `result_collector.py` consolidates checkpoints into tables |
 | Prediction aggregation | `prediction_aggregator.py` builds case-level prediction artifacts |
+| Figure report | `figure_report.py` writes manuscript figures and error tables |
 | Ablation runner | `ablation.py` executes component-isolation matrices |
 | Time-boxed autonomous loop | `autonomous_window.py` executes approved rounds |
 | Proposal generator | `proposal_generator.py` writes candidate tree nodes |
@@ -88,34 +89,40 @@ runner interface.
    - writes `slide_predictions.csv`, `case_predictions.csv`,
      `case_metrics.json`, and `prediction_report.md`
 
-10. `statistical_analysis`
+10. `figure_report`
+   - `build-figures` reads case-level predictions
+   - writes ROC, confusion matrix, binary calibration, per-class metrics, and
+     error-case tables
+   - stores an auditable `figure_report.md/json`
+
+11. `statistical_analysis`
    - `analyze-stats` reads completed checkpoint runs
    - reports mean, standard deviation, 95% CI, and paired comparisons
    - writes `stats_report.json` and `stats_report.md`
 
-11. `ablation`
+12. `ablation`
    - `run-ablation-cv` executes baseline, single-component, and full-method rows
    - uses the confirmed CV split and checkpoint/resume
    - writes `ablation_cv_report.md`
 
-12. `report`
+13. `report`
    - ranks all completed runs by `test_macro_auc`, falling back to
      `val_macro_auc`
    - records exact commands and artifact paths
 
-13. `experiment_tree`
+14. `experiment_tree`
    - seeds root nodes from candidate baseline models
    - executes pending nodes selected by a QWBE-lite score
    - expands high-scoring root nodes into focused hyperparameter children
    - creates conservative retry children for selected failure categories
    - writes `experiment_tree.json` and `experiment_tree.md`
 
-14. `proposal_generation`
+15. `proposal_generation`
    - `propose-nodes` reads baseline plans, checkpoints, and the experiment tree
    - writes auditable candidate nodes and `proposal_report.md`
    - supports preview mode before modifying the tree
 
-15. `autonomous_window`
+16. `autonomous_window`
    - runs one tree node per approved round
    - can call the proposal generator when no pending nodes remain
    - stops on wall-clock budget, run budget, target metric, or no pending nodes
@@ -277,6 +284,21 @@ available.
 The custom AB_MIL innovation runner writes split-specific prediction files
 after training. MIL_BASELINE methods can join the same layer by writing the same
 CSV contract from an inference adapter.
+
+## Figure Report
+
+`figure_report.py` consumes `case_predictions.csv` and writes
+manuscript-facing artifacts without rerunning training:
+
+- `roc_curve.png`
+- `confusion_matrix.png`
+- `calibration_curve.png` for binary probability outputs
+- `per_class_metrics.csv`
+- `error_cases.csv`
+- `figure_report.md/json`
+
+This module is intentionally downstream of case-level predictions, so all
+figures share the same patient/case unit as the primary metrics.
 
 ## Ablation Runner
 

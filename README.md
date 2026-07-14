@@ -88,6 +88,13 @@ Aggregate slide-level prediction CSVs to patient/case level:
   --aggregation mean
 ```
 
+Build manuscript figures and error-case tables from case-level predictions:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli build-figures `
+  --root runs\cptac_brca_pam50
+```
+
 Run the default innovation ablation matrix:
 
 ```powershell
@@ -274,6 +281,13 @@ and writes `slide_predictions.csv`, `case_predictions.csv`, `case_metrics.json`,
 and `prediction_report.md`. The custom AB_MIL innovation runner writes
 `train_predictions.csv`, `val_predictions.csv`, and `test_predictions.csv`
 automatically after non-dry-run training.
+
+## Figure Report
+
+`build-figures` reads `case_predictions.csv` and writes manuscript-facing
+artifacts: `roc_curve.png`, `confusion_matrix.png`, `calibration_curve.png`
+when binary probabilities are available, `per_class_metrics.csv`,
+`error_cases.csv`, and `figure_report.md/json`.
 
 ## Ablation Runner
 
