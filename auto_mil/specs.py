@@ -63,6 +63,7 @@ class DatasetSpec:
     name: str
     data_dir: Path
     labels_csv: Path
+    bag_level: str = "case"
     case_id_column: str = "case_id"
     center_column: str | None = None
     cohort_column: str | None = None
@@ -102,6 +103,7 @@ def dataset_spec_from_config(raw: dict[str, Any]) -> DatasetSpec:
         name=str(dataset.get("name", raw.get("name", "dataset"))),
         data_dir=Path(dataset.get("data_dir", paths.get("data_dir", ""))),
         labels_csv=Path(dataset.get("labels_csv", paths.get("labels_csv", ""))),
+        bag_level=str(dataset.get("bag_level", "case")).lower(),
         case_id_column=str(dataset.get("case_id_column", "case_id")),
         center_column=dataset.get("center_column"),
         cohort_column=dataset.get("cohort_column"),
@@ -128,6 +130,7 @@ def describe_capabilities(task: TaskSpec, dataset: DatasetSpec) -> dict[str, Any
             "task_kind": "classification",
             "feature_format": "h5",
             "split_unit": "case/patient",
+            "default_bag_level": "case",
         },
         "blocked_reason": None
         if can_execute

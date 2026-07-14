@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import h5py
+import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
@@ -118,6 +119,102 @@ def _wide_split_csv(slide_df: pd.DataFrame) -> pd.DataFrame:
         rows[f"{split}_slide_path"] = paths + [""] * (max_len - len(paths))
         rows[f"{split}_label"] = labels + [""] * (max_len - len(labels))
     return pd.DataFrame(rows)
+
+
+def _safe_filename(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("._") or "case"
+
+
+def _read_feature_array(path: Path, feature_key: str) -> np.ndarray:
+    with h5py.File(path, "r") as h5:
+        if feature_key not in h5:
+            raise ValueError(f"{path} does not contain feature dataset {feature_key!r}")
+        features = np.asarray(h5[feature_key])
+    if features.ndim == 3 and features.shape[0] == 1:
+        features = features[0]
+    elif features.ndim == 3:
+        features = features.reshape(-1, features.shape[-1])
+    if features.ndim != 2:
+        raise ValueError(f"Unsupported feature shape in {path}: {features.shape}")
+    return features
+
+
+def _read_coords_array(path: Path, coords_key: str | None) -> np.ndarray | None:
+    if not coords_key:
+        return None
+    with h5py.File(path, "r") as h5:
+        if coords_key not in h5:
+            return None
+        coords = np.asarray(h5[coords_key])
+    if coords.ndim == 3 and coords.shape[0] == 1:
+        coords = coords[0]
+    elif coords.ndim == 3:
+        coords = coords.reshape(-1, coords.shape[-1])
+    return coords if coords.ndim == 2 else None
+
+
+def _case_bag_table(slide_df: pd.DataFrame, output_dir: Path, dataset: DatasetSpec) -> tuple[pd.DataFrame, pd.DataFrame]:
+    bag_dir = output_dir / "case_bags"
+    bag_dir.mkdir(parents=True, exist_ok=True)
+    bag_rows: list[dict[str, Any]] = []
+    manifest_rows: list[dict[str, Any]] = []
+    for case_id, group in slide_df.sort_values("slide_path").groupby("case_id", sort=True):
+        labels = sorted({int(label) for label in group["label"].tolist()})
+        splits = sorted({str(split) for split in group["split"].tolist()})
+        if len(labels) != 1:
+            raise ValueError(f"Case {case_id} has inconsistent labels across slides: {labels}")
+        if len(splits) != 1:
+            raise ValueError(f"Case {case_id} appears in multiple splits: {splits}")
+        feature_arrays = []
+        coord_arrays = []
+        coord_complete = True
+        source_paths = [Path(path) for path in group["slide_path"].astype(str).tolist()]
+        for source_path in source_paths:
+            features = _read_feature_array(source_path, dataset.feature.feature_key)
+            feature_arrays.append(features)
+            coords = _read_coords_array(source_path, dataset.feature.coords_key)
+            if coords is None or coords.shape[0] != features.shape[0]:
+                coord_complete = False
+            else:
+                coord_arrays.append(coords)
+            manifest_rows.append(
+                {
+                    "case_id": case_id,
+                    "case_bag_path": str(bag_dir / f"{_safe_filename(str(case_id))}.h5"),
+                    "source_slide_path": str(source_path),
+                    "n_patches": int(features.shape[0]),
+                }
+            )
+        case_features = np.concatenate(feature_arrays, axis=0)
+        bag_path = bag_dir / f"{_safe_filename(str(case_id))}.h5"
+        with h5py.File(bag_path, "w") as h5:
+            h5.create_dataset("features", data=case_features)
+            if coord_complete and coord_arrays:
+                h5.create_dataset("coords", data=np.concatenate(coord_arrays, axis=0))
+            h5.attrs["case_id"] = str(case_id)
+            h5.attrs["source_slide_count"] = int(len(source_paths))
+            h5.attrs["source_slides_json"] = json.dumps([str(path) for path in source_paths])
+        first = group.iloc[0]
+        bag_rows.append(
+            {
+                "case_id": case_id,
+                "slide_path": str(bag_path),
+                "label": int(first["label"]),
+                "label_name": first["label_name"],
+                "split": first["split"],
+                "n_source_slides": int(len(source_paths)),
+                "n_patches": int(case_features.shape[0]),
+            }
+        )
+    return pd.DataFrame(bag_rows), pd.DataFrame(manifest_rows)
+
+
+def _training_bag_table(slide_df: pd.DataFrame, output_dir: Path, dataset: DatasetSpec) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    if dataset.bag_level == "slide":
+        return slide_df.copy(), None
+    if dataset.bag_level != "case":
+        raise ValueError(f"Unsupported dataset.bag_level={dataset.bag_level!r}; expected 'case' or 'slide'.")
+    return _case_bag_table(slide_df, output_dir, dataset)
 
 
 def _load_h5_classification_slide_table(
@@ -311,17 +408,21 @@ def prepare_dataset_from_case_splits(
         slide_df, case_df, label_to_id, missing_cases, num_h5_total, first_info = loaded
     slide_df["split"] = slide_df["case_id"].map(split_by_case)
     slide_df = slide_df.dropna(subset=["split"]).copy()
+    bag_df, bag_manifest = _training_bag_table(slide_df, output_dir, dataset)
 
     dataset_csv = output_dir / "dataset.csv"
-    wide = _wide_split_csv(slide_df)
+    wide = _wide_split_csv(bag_df)
     wide.to_csv(dataset_csv, index=False)
 
     h5_paths_csv = output_dir / "h5_paths.csv"
-    pd.DataFrame({"h5_path": slide_df["slide_path"].astype(str)}).to_csv(h5_paths_csv, index=False)
+    pd.DataFrame({"h5_path": bag_df["slide_path"].astype(str)}).to_csv(h5_paths_csv, index=False)
 
     metadata = _metadata_base(dataset, task, label_to_id, missing_cases, num_h5_total, slide_df, case_df, first_info)
     metadata.update(
         {
+            "bag_level": dataset.bag_level,
+            "num_training_bags": int(len(bag_df)),
+            "bag_counts": bag_df.groupby(["split", "label_name"]).size().unstack(fill_value=0).to_dict(),
             "split_counts_slides": slide_df.groupby(["split", "label_name"]).size().unstack(fill_value=0).to_dict(),
             "split_counts_cases": case_df.assign(split=case_df["case_id"].map(split_by_case))
             .groupby(["split", "label_name"])
@@ -337,6 +438,9 @@ def prepare_dataset_from_case_splits(
         json.dump(metadata, f, indent=2)
 
     slide_df.to_csv(output_dir / "slides_long.csv", index=False)
+    bag_df.to_csv(output_dir / "bags_long.csv", index=False)
+    if bag_manifest is not None:
+        bag_manifest.to_csv(output_dir / "case_bag_manifest.csv", index=False)
     return DatasetArtifacts(dataset_csv=dataset_csv, h5_paths_csv=h5_paths_csv, metadata_json=metadata_json)
 
 
@@ -410,14 +514,25 @@ def prepare_dataset_kfold(
 
         fold_dir = output_dir / f"fold_{fold_idx}"
         fold_dir.mkdir(parents=True, exist_ok=True)
-        _wide_split_csv(fold_slides).to_csv(fold_dir / "dataset.csv", index=False)
+        fold_bags, fold_manifest = _training_bag_table(fold_slides, fold_dir, dataset)
+        _wide_split_csv(fold_bags).to_csv(fold_dir / "dataset.csv", index=False)
         fold_slides.to_csv(fold_dir / "slides_long.csv", index=False)
+        fold_bags.to_csv(fold_dir / "bags_long.csv", index=False)
+        if fold_manifest is not None:
+            fold_manifest.to_csv(fold_dir / "case_bag_manifest.csv", index=False)
         fold_dirs.append(fold_dir)
 
         fold_summaries.append(
             {
                 "fold": fold_idx,
                 "dataset_csv": str(fold_dir / "dataset.csv"),
+                "bag_level": dataset.bag_level,
+                "bag_counts": (
+                    fold_bags.groupby(["split", "label_name"])
+                    .size()
+                    .unstack(fill_value=0)
+                    .to_dict()
+                ),
                 "case_counts": (
                     case_df.assign(split=case_df["case_id"].map(split_by_case))
                     .dropna(subset=["split"])
@@ -436,10 +551,16 @@ def prepare_dataset_kfold(
     )
 
     h5_paths_csv = output_dir / "h5_paths.csv"
-    pd.DataFrame({"h5_path": slide_df["slide_path"].astype(str)}).to_csv(h5_paths_csv, index=False)
+    bag_paths = []
+    for fold_dir in fold_dirs:
+        bags_csv = fold_dir / "bags_long.csv"
+        if bags_csv.exists():
+            bag_paths.extend(pd.read_csv(bags_csv)["slide_path"].astype(str).tolist())
+    pd.DataFrame({"h5_path": sorted(set(bag_paths))}).to_csv(h5_paths_csv, index=False)
     metadata = _metadata_base(dataset, task, label_to_id, missing_cases, num_h5_total, slide_df, case_df, first_info)
     metadata.update(
         {
+            "bag_level": dataset.bag_level,
             "n_splits": n_splits,
             "val_fraction_of_train": task.cv_val_fraction_of_train,
             "folds": fold_summaries,
@@ -474,13 +595,24 @@ def prepare_dataset_kfold_from_case_splits(
         fold_slides = fold_slides.dropna(subset=["split"]).copy()
         fold_dir = output_dir / f"fold_{fold_idx}"
         fold_dir.mkdir(parents=True, exist_ok=True)
-        _wide_split_csv(fold_slides).to_csv(fold_dir / "dataset.csv", index=False)
+        fold_bags, fold_manifest = _training_bag_table(fold_slides, fold_dir, dataset)
+        _wide_split_csv(fold_bags).to_csv(fold_dir / "dataset.csv", index=False)
         fold_slides.to_csv(fold_dir / "slides_long.csv", index=False)
+        fold_bags.to_csv(fold_dir / "bags_long.csv", index=False)
+        if fold_manifest is not None:
+            fold_manifest.to_csv(fold_dir / "case_bag_manifest.csv", index=False)
         fold_dirs.append(fold_dir)
         fold_summaries.append(
             {
                 "fold": fold_idx,
                 "dataset_csv": str(fold_dir / "dataset.csv"),
+                "bag_level": dataset.bag_level,
+                "bag_counts": (
+                    fold_bags.groupby(["split", "label_name"])
+                    .size()
+                    .unstack(fill_value=0)
+                    .to_dict()
+                ),
                 "case_counts": (
                     case_df.assign(split=case_df["case_id"].map(split_by_case))
                     .dropna(subset=["split"])
@@ -499,10 +631,16 @@ def prepare_dataset_kfold_from_case_splits(
         )
 
     h5_paths_csv = output_dir / "h5_paths.csv"
-    pd.DataFrame({"h5_path": slide_df["slide_path"].astype(str)}).to_csv(h5_paths_csv, index=False)
+    bag_paths = []
+    for fold_dir in fold_dirs:
+        bags_csv = fold_dir / "bags_long.csv"
+        if bags_csv.exists():
+            bag_paths.extend(pd.read_csv(bags_csv)["slide_path"].astype(str).tolist())
+    pd.DataFrame({"h5_path": sorted(set(bag_paths))}).to_csv(h5_paths_csv, index=False)
     metadata = _metadata_base(dataset, task, label_to_id, missing_cases, num_h5_total, slide_df, case_df, first_info)
     metadata.update(
         {
+            "bag_level": dataset.bag_level,
             "n_splits": len(fold_split_by_case),
             "val_fraction_of_train": task.cv_val_fraction_of_train,
             "folds": fold_summaries,

@@ -1,6 +1,7 @@
 name: cptac_brca_pam50
 dataset:
   name: CPTAC-BRCA
+  bag_level: case
   case_id_column: case_id
   feature:
     format: h5

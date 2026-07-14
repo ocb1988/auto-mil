@@ -66,6 +66,7 @@ def cmd_inspect_spec(args: argparse.Namespace) -> None:
     print(f"task_kind={task.kind}")
     print(f"outcome_column={task.outcome_column}")
     print(f"dataset={dataset.name}")
+    print(f"bag_level={dataset.bag_level}")
     print(f"data_dir={dataset.data_dir}")
     print(f"labels_csv={dataset.labels_csv}")
     print(f"case_id_column={dataset.case_id_column}")

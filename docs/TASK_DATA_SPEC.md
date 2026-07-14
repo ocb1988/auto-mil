@@ -15,6 +15,7 @@ outer research workflow.
 ```yaml
 dataset:
   name: CPTAC-BRCA
+  bag_level: case              # default; use slide only for slide-level MIL
   case_id_column: case_id
   center_column: center        # optional
   cohort_column: cohort        # optional
@@ -92,6 +93,10 @@ The planner inspects feature keys and coordinate availability, then writes
 - feature format: H5 files under `dataset.data_dir` or `paths.data_dir`
 - feature key: configurable, defaults to `features`
 - split unit: case/patient id
+- bag level: `case` by default. Auto-MIL concatenates patch features from all
+  slides belonging to the same case into one generated H5 bag before training.
+  Use `dataset.bag_level: slide` only when deliberately treating each slide as a
+  separate MIL sample.
 - labels: CSV with a case id column and a classification label column
 - optional metadata: center, cohort, external-test indicator, coordinate key
 - split planning: predefined external-test, center-holdout, single-cohort

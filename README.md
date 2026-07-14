@@ -5,11 +5,13 @@ Camyla-inspired autonomous research scaffold for multiple-instance learning
 
 This repository includes a vendored MIL baseline tree under
 `third_party/MIL_BASELINE` and orchestrates experiments on top of that bundled
-code by default, using slide-level H5 feature bags such as `K:\cptac-brca`.
+code by default, using H5 feature bags such as `K:\cptac-brca`.
 
 ## What It Does
 
 - Audits a pathology MIL dataset and builds MIL_BASELINE-compatible CSV files.
+- Builds patient/case-level bags by concatenating patch features from all slides
+  belonging to the same case by default.
 - Normalizes each project into explicit `TaskSpec` and `DatasetSpec` records.
 - Screens several baseline MIL methods under a small budget.
 - Ships MIL_BASELINE configs/modules/processors inside the project, including
@@ -204,7 +206,10 @@ child node within the configured failure-retry depth.
 
 By default, outputs land under `runs/cptac_brca_pam50/`:
 
-- `dataset.csv`: MIL_BASELINE train/val/test wide CSV.
+- `dataset.csv`: MIL_BASELINE train/val/test wide CSV. By default paths point
+  to generated patient/case-level H5 bags under `case_bags/`.
+- `bags_long.csv` and `case_bag_manifest.csv`: case-bag inventory and source
+  slide provenance when `dataset.bag_level: case`.
 - `metadata.json`: label mapping, split counts, inferred feature dimension.
 - `configs/*.yaml`: generated MIL_BASELINE configs.
 - `mil_logs/`: raw MIL_BASELINE training outputs.
@@ -217,8 +222,11 @@ By default, outputs land under `runs/cptac_brca_pam50/`:
 
 Configuration is normalized into `TaskSpec` and `DatasetSpec`. The current
 runner supports classification with H5 feature bags and configurable feature
-keys; prognosis/survival and regression fields are represented for the next
-adapters. See `docs/TASK_DATA_SPEC.md`.
+keys. The default bag level is `case`, meaning multiple slides from the same
+patient/case are concatenated into one MIL bag before training. Set
+`dataset.bag_level: slide` only when intentionally running slide-level MIL.
+Prognosis/survival and regression fields are represented for the next adapters.
+See `docs/TASK_DATA_SPEC.md`.
 
 ## Split Planner
 
@@ -259,10 +267,11 @@ for auditability or use `--completed-only` for clean result tables.
 
 ## Prediction Aggregation
 
-`aggregate-predictions` reads slide-level prediction CSVs and aggregates
-multiple slides from the same patient/case into case-level probabilities. It
-writes `slide_predictions.csv`, `case_predictions.csv`, `case_metrics.json`, and
-`prediction_report.md`. The custom AB_MIL innovation runner writes
+`aggregate-predictions` is an optional post-hoc path for experiments that emit
+slide-level predictions. It aggregates multiple slides from the same
+patient/case into case-level probabilities using mean, median, or max pooling
+and writes `slide_predictions.csv`, `case_predictions.csv`, `case_metrics.json`,
+and `prediction_report.md`. The custom AB_MIL innovation runner writes
 `train_predictions.csv`, `val_predictions.csv`, and `test_predictions.csv`
 automatically after non-dry-run training.
 

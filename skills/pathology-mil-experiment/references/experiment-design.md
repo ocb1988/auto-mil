@@ -17,6 +17,10 @@ Minimum exploration:
 
 - number of patients/cases, slides, centers, labels
 - slides per patient and whether labels are patient-level or slide-level
+- bag construction policy. For patient/case-level labels, default to one MIL bag
+  per case by concatenating patch features from all slides before training.
+  Treat slide-level output average/max/min as a fallback or secondary analysis,
+  not the default training design.
 - class/event/outcome distribution by center
 - missing labels, duplicate IDs, inconsistent IDs
 - feature dimensions, patch counts, coordinate availability

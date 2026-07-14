@@ -24,6 +24,7 @@ Run this as a staged research workflow with explicit user confirmations at decis
 3. Explore the data before designing experiments.
    - Inspect slide/case counts, labels, missingness, class balance, center/cohort fields, patient/slide multiplicity, feature dimensions, coordinate availability, and leakage risks.
    - For H5/PT WSI feature bags, inspect keys and shapes from representative files.
+   - When labels are patient/case-level and cases may have multiple slides, prefer constructing one case-level MIL bag by concatenating patch features from all slides before training; use slide-level output aggregation only as a secondary analysis or when the user explicitly wants slide-level MIL.
    - Save exploration artifacts under a run directory.
 
 4. Propose the split design and stop for confirmation.

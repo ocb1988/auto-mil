@@ -43,6 +43,8 @@ runner interface.
    - scans H5 files
    - infers feature dimension from the configured feature key
    - joins slide files to `case_id`
+   - materializes generated case-level H5 bags by concatenating all slide patch
+     features for each case when `dataset.bag_level: case` (default)
    - splits by case to avoid patient leakage
    - writes MIL_BASELINE wide CSV
 
@@ -202,12 +204,17 @@ keeps the autonomous research state outside it.
 - `TaskSpec` captures classification, prognosis/survival, and regression
   fields, plus split seed and default split ratios.
 - `DatasetSpec` captures dataset paths, case id columns, center/cohort/external
-  test columns, H5 feature key, coordinate key, and case-id filename regex.
+  test columns, H5 feature key, coordinate key, case-id filename regex, and
+  bag level.
 - `FeatureSpec` records the feature-bag format and key names.
 
-The current executable path supports classification with H5 feature bags. Other
-task kinds are represented but intentionally blocked at preparation time until a
-matching runner/metric adapter exists.
+The current executable path supports classification with H5 feature bags.
+`dataset.bag_level` defaults to `case`: Auto-MIL writes one generated H5 bag per
+patient/case under `case_bags/`, with `features` equal to the concatenation of
+patch features from all source slides and `coords` concatenated when present.
+`dataset.bag_level: slide` is available only for deliberate slide-level MIL
+baselines. Other task kinds are represented but intentionally blocked at
+preparation time until a matching runner/metric adapter exists.
 
 ## Split Planner
 
@@ -260,11 +267,12 @@ training commands.
 
 ## Prediction Aggregation
 
-`prediction_aggregator.py` is the patient/case-level prediction layer. It
+`prediction_aggregator.py` is the optional post-hoc patient/case-level
+prediction layer for experiments that intentionally emit slide-level outputs. It
 accepts flexible slide-level CSVs with columns such as `slide_path`, `case_id`,
 `y_true`, `y_pred`, and `prob_0`, `prob_1`, ... . If `case_id` is absent, it
-uses the configured case-id filename regex. The default aggregation averages
-slide probabilities for each case; median and max pooling are also available.
+uses the configured case-id filename regex. Mean, median, and max pooling are
+available.
 
 The custom AB_MIL innovation runner writes split-specific prediction files
 after training. MIL_BASELINE methods can join the same layer by writing the same
