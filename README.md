@@ -95,6 +95,14 @@ Build manuscript figures and error-case tables from case-level predictions:
   --root runs\cptac_brca_pam50
 ```
 
+Draft manuscript Methods/Results from the collected evidence artifacts:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli write-manuscript `
+  --root runs\cptac_brca_pam50 `
+  --config configs\cptac_brca_pam50.yaml
+```
+
 Run the default innovation ablation matrix:
 
 ```powershell
@@ -288,6 +296,16 @@ automatically after non-dry-run training.
 artifacts: `roc_curve.png`, `confusion_matrix.png`, `calibration_curve.png`
 when binary probabilities are available, `per_class_metrics.csv`,
 `error_cases.csv`, and `figure_report.md/json`.
+
+## Manuscript Writer
+
+`write-manuscript` reads the available evidence artifacts under a run root and
+writes `manuscript/manuscript_evidence.json` plus
+`manuscript/manuscript_draft.md`. It uses metadata, split plans, result tables,
+statistical reports, prediction reports, figure reports, and ablation reports
+when present, and emits warnings for missing or dry-run-only evidence. The draft
+is intentionally conservative: it scaffolds Methods/Results text and claim
+guardrails without inventing unsupported performance claims.
 
 ## Ablation Runner
 

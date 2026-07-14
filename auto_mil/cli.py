@@ -16,6 +16,7 @@ from .failure_policy import action_to_payload, decide_failure_action
 from .figure_report import build_figure_report
 from .innovation_cv import run_innovation_cv
 from .log_analyzer import diagnose_log_file, diagnosis_to_payload
+from .manuscript_writer import write_manuscript_draft
 from .prediction_aggregator import aggregate_predictions
 from .proposal_generator import propose_nodes
 from .research import run_autonomous_research
@@ -399,6 +400,28 @@ def cmd_build_figures(args: argparse.Namespace) -> None:
         print(f"warning={warning}")
 
 
+def cmd_write_manuscript(args: argparse.Namespace) -> None:
+    cfg = load_config(args.config) if args.config else None
+    draft, json_path, md_path = write_manuscript_draft(
+        args.root,
+        cfg=cfg,
+        output_dir=Path(args.output_dir) if args.output_dir else None,
+        title=args.title,
+        primary_metric=args.primary_metric,
+    )
+    if args.json:
+        from dataclasses import asdict
+
+        from .state import json_ready
+
+        print(json.dumps(json_ready(asdict(draft)), indent=2, ensure_ascii=True))
+        return
+    print(f"manuscript_evidence_json={json_path}")
+    print(f"manuscript_draft={md_path}")
+    for warning in draft.warnings:
+        print(f"warning={warning}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Autonomous MIL research runner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -573,6 +596,15 @@ def build_parser() -> argparse.ArgumentParser:
     figures.add_argument("--positive-class", type=int, default=1, help="Positive class for binary ROC/calibration")
     figures.add_argument("--json", action="store_true", help="Print JSON payload")
     figures.set_defaults(func=cmd_build_figures)
+
+    manuscript = sub.add_parser("write-manuscript", help="Draft Methods and Results from collected Auto-MIL artifacts")
+    manuscript.add_argument("--root", required=True, help="Run root containing result artifacts")
+    manuscript.add_argument("--config", default=None, help="Optional Auto-MIL config for task/dataset wording")
+    manuscript.add_argument("--output-dir", default=None, help="Directory for manuscript_draft.md")
+    manuscript.add_argument("--title", default=None)
+    manuscript.add_argument("--primary-metric", default="test_macro_auc")
+    manuscript.add_argument("--json", action="store_true", help="Print JSON payload")
+    manuscript.set_defaults(func=cmd_write_manuscript)
 
     return parser
 

@@ -32,6 +32,16 @@ When using this repo, prefer generated evidence artifacts:
 - `figure_report.md`, `per_class_metrics.csv`, and `error_cases.csv` for
   ROC/confusion matrix/calibration/error analysis claims
 
+Generate the first evidence-indexed draft with:
+
+```powershell
+python -m auto_mil.cli write-manuscript --root runs\my_experiment --config configs\my_experiment.yaml
+```
+
+Treat `manuscript/manuscript_draft.md` as a scaffold, not a final paper section.
+Use its warnings and claim guardrails to decide which experiments, statistics,
+or figures are still missing before polishing the prose.
+
 ## Tone
 
 Use precise claims:

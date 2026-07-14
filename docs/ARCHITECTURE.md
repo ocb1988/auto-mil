@@ -20,6 +20,7 @@ runner interface.
 | Prediction aggregation | `prediction_aggregator.py` builds case-level prediction artifacts |
 | Figure report | `figure_report.py` writes manuscript figures and error tables |
 | Ablation runner | `ablation.py` executes component-isolation matrices |
+| Manuscript writer | `manuscript_writer.py` drafts Methods/Results from evidence artifacts |
 | Time-boxed autonomous loop | `autonomous_window.py` executes approved rounds |
 | Proposal generator | `proposal_generator.py` writes candidate tree nodes |
 | Baseline stage gate | `baseline_screen` runs cheap MIL_BASELINE models |
@@ -105,12 +106,19 @@ runner interface.
    - uses the confirmed CV split and checkpoint/resume
    - writes `ablation_cv_report.md`
 
-13. `report`
+13. `manuscript_writing`
+   - `write-manuscript` discovers metadata, result, statistics, prediction,
+     figure, and ablation artifacts under the run root
+   - writes `manuscript_evidence.json` and a conservative
+     `manuscript_draft.md`
+   - records missing-evidence warnings instead of fabricating claims
+
+14. `report`
    - ranks all completed runs by `test_macro_auc`, falling back to
      `val_macro_auc`
    - records exact commands and artifact paths
 
-14. `experiment_tree`
+15. `experiment_tree`
    - seeds root nodes from candidate baseline models
    - executes pending nodes selected by a QWBE-lite score
    - expands high-scoring root nodes into focused hyperparameter children
@@ -300,6 +308,25 @@ manuscript-facing artifacts without rerunning training:
 This module is intentionally downstream of case-level predictions, so all
 figures share the same patient/case unit as the primary metrics.
 
+## Manuscript Writer
+
+`manuscript_writer.py` is the final evidence-to-text layer. It discovers the
+artifact set produced by the upstream modules:
+
+- dataset metadata
+- `results/manuscript_results.md`
+- `results/model_summary.csv`
+- `stats_report.md`
+- `prediction_report.md`
+- `figure_report.md`
+- `ablation_cv_report.md`
+- confirmed split and baseline plans when present
+
+It writes `manuscript_evidence.json` for auditability and
+`manuscript_draft.md` for paper drafting. The generated text is deliberately
+bounded by the discovered evidence: incomplete or dry-run artifacts become
+explicit warnings and limitations rather than unsupported claims.
+
 ## Ablation Runner
 
 `ablation.py` currently targets the custom AB_MIL innovation path. The default
@@ -352,6 +379,5 @@ results, and code context.
   objects as the deterministic proposal generator.
 - Add automatic recipe overrides from baseline family risk profiles.
 - Add seed-sweep execution policies on top of the statistical reporting module.
-- Add paper-style narrative generation from `manuscript_results.md`,
-  `prediction_report.md`, `stats_report.md`, and ablation reports once evidence
-  is substantial.
+- Add journal-specific templates, LLM polishing, and DOCX/PDF export on top of
+  the evidence-indexed manuscript draft.
