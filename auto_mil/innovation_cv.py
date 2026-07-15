@@ -255,6 +255,8 @@ def run_innovation_cv(
     dataset = cfg.dataset_spec
     training = cfg.raw.get("training", {})
     search = cfg.raw.get("search", {})
+    raw_max_patches = training.get("max_patches_per_bag")
+    max_patches_per_bag = int(raw_max_patches) if raw_max_patches not in (None, "", 0) else None
 
     selected_split = None
     if split_plan_path is not None:
@@ -273,6 +275,7 @@ def run_innovation_cv(
             task=task,
             output_dir=output_dir / "folds",
             n_splits=n_splits,
+            max_patches_per_bag=max_patches_per_bag,
         )
     metadata = json.loads(artifacts.metadata_json.read_text(encoding="utf-8"))
     checkpoint.update_metadata(

@@ -50,13 +50,20 @@ class WideWSIDataset(Dataset):
             with h5py.File(path, "r") as h5:
                 feat = torch.from_numpy(np.array(h5["features"]))
         else:
-            loaded = torch.load(path)
+            try:
+                loaded = torch.load(path)
+            except Exception as exc:
+                if "Weights only load failed" not in str(exc):
+                    raise
+                loaded = torch.load(path, weights_only=False)
             if isinstance(loaded, dict):
                 feat = loaded.get("feats", loaded.get("features"))
                 if feat is None:
                     raise ValueError(f"Unknown feature dict keys in {path}: {list(loaded)}")
             else:
                 feat = loaded
+        if isinstance(feat, np.ndarray):
+            feat = torch.from_numpy(feat)
         if len(feat.shape) == 3:
             feat = feat.squeeze(0)
         return feat.float(), label

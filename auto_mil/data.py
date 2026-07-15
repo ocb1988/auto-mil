@@ -249,12 +249,25 @@ def _cache_sampled_slide_features(
     cache_dir = output_dir / f"feature_cache_max{max_patches_per_bag}"
     cache_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = cache_dir / "manifest.csv"
+    source_manifest_path = (
+        output_dir.parent.parent
+        / "case_level_cv"
+        / "folds"
+        / f"feature_cache_max{max_patches_per_bag}"
+        / "manifest.csv"
+    )
+    read_manifest_path = manifest_path if manifest_path.exists() else source_manifest_path
     manifest_by_cache: dict[str, dict[str, Any]] = {}
-    if manifest_path.exists():
-        manifest_df = pd.read_csv(manifest_path)
+    manifest_by_source: dict[str, dict[str, Any]] = {}
+    if read_manifest_path.exists():
+        manifest_df = pd.read_csv(read_manifest_path)
         if "cache_path" in manifest_df.columns:
             manifest_by_cache = {
                 str(row["cache_path"]): row for row in manifest_df.to_dict("records")
+            }
+        if "source_slide_path" in manifest_df.columns:
+            manifest_by_source = {
+                str(row["source_slide_path"]): row for row in manifest_df.to_dict("records")
             }
     cached_rows = []
     manifest_rows = []
@@ -262,11 +275,17 @@ def _cache_sampled_slide_features(
         source_path = Path(str(row["slide_path"]))
         path_hash = hashlib.sha1(str(source_path).encode("utf-8")).hexdigest()[:10]
         cache_path = cache_dir / f"{_safe_filename(str(row['case_id']))}_{path_hash}.pt"
-        existing = manifest_by_cache.get(str(cache_path))
+        existing = manifest_by_cache.get(str(cache_path)) or manifest_by_source.get(str(source_path))
         if cache_path.exists() and existing is not None:
+            existing_cache_path = cache_path
+        elif existing is not None and Path(str(existing.get("cache_path", ""))).exists():
+            existing_cache_path = Path(str(existing["cache_path"]))
+        else:
+            existing_cache_path = None
+        if existing_cache_path is not None and existing is not None:
             updated = dict(row)
             updated["source_slide_path"] = str(source_path)
-            updated["slide_path"] = str(cache_path)
+            updated["slide_path"] = str(existing_cache_path)
             updated["n_patches_original"] = int(existing.get("n_patches_original", 0) or 0)
             updated["n_patches"] = int(existing.get("n_patches_cached", max_patches_per_bag) or max_patches_per_bag)
             cached_rows.append(updated)
