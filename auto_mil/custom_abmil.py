@@ -390,7 +390,11 @@ def parse_args() -> TrainConfig:
     parser.add_argument(
         "--variant",
         required=True,
-        choices=["AB_MIL_CE", "AB_MIL_FOCAL", "AB_MIL_PROTO", "AB_MIL_FOCAL_PROTO"],
+        help=(
+            "Variant name. Names containing FOCAL use class-balanced focal loss; "
+            "names containing PROTO use prototype regularization. Suffixes are kept "
+            "for experiment tracking, e.g. AB_MIL_FOCAL_PROTO_LR1E4_PL01."
+        ),
     )
     parser.add_argument("--num-classes", type=int, required=True)
     parser.add_argument("--in-dim", type=int, required=True)

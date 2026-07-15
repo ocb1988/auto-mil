@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -95,7 +96,10 @@ def run_custom_variant(
     lr: float,
     dropout: float,
     balanced_sampler: bool,
+    focal_gamma: float,
+    focal_beta: float,
     prototype_lambda: float,
+    prototype_temperature: float,
     dry_run: bool,
 ) -> CustomRunResult:
     run_id = f"{variant.lower()}_fold{fold}"
@@ -132,6 +136,12 @@ def run_custom_variant(
         str(dropout),
         "--prototype-lambda",
         str(prototype_lambda),
+        "--focal-gamma",
+        str(focal_gamma),
+        "--focal-beta",
+        str(focal_beta),
+        "--prototype-temperature",
+        str(prototype_temperature),
     ]
     if balanced_sampler:
         command.append("--balanced-sampler")
@@ -167,6 +177,45 @@ def run_custom_variant(
         error=error,
         diagnosis=diagnosis,
     )
+
+
+def _token_number(name: str, token: str) -> float | None:
+    match = re.search(rf"{token}([0-9]+(?:P[0-9]+)?(?:E-?[0-9]+)?)", name.upper())
+    if not match:
+        return None
+    value = match.group(1).replace("P", ".")
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _variant_hparams(
+    variant: str,
+    *,
+    lr: float,
+    dropout: float,
+    balanced_sampler: bool,
+    focal_gamma: float,
+    focal_beta: float,
+    prototype_lambda: float,
+    prototype_temperature: float,
+) -> dict[str, Any]:
+    upper = variant.upper()
+    parsed_lr = _token_number(upper, "LR")
+    parsed_dropout = _token_number(upper, "DO")
+    parsed_gamma = _token_number(upper, "FG")
+    parsed_lambda = _token_number(upper, "PL")
+    parsed_temperature = _token_number(upper, "PT")
+    return {
+        "lr": parsed_lr if parsed_lr is not None else lr,
+        "dropout": parsed_dropout if parsed_dropout is not None else dropout,
+        "balanced_sampler": False if "NOBAL" in upper else balanced_sampler,
+        "focal_gamma": parsed_gamma if parsed_gamma is not None else focal_gamma,
+        "focal_beta": focal_beta,
+        "prototype_lambda": parsed_lambda if parsed_lambda is not None else prototype_lambda,
+        "prototype_temperature": parsed_temperature if parsed_temperature is not None else prototype_temperature,
+    }
 
 
 def summarize(results: list[CustomRunResult]) -> dict[str, dict[str, Any]]:
@@ -290,7 +339,13 @@ def run_innovation_cv(
     in_dim_cfg = training.get("in_dim", "auto")
     in_dim = int(metadata["feature"]["in_dim"] if in_dim_cfg == "auto" else in_dim_cfg)
     lr = float(search.get("learning_rates", [0.0002])[0])
-    dropout = 0.25
+    innovation = cfg.raw.get("innovation", {})
+    dropout = float(innovation.get("dropout", 0.25))
+    focal_gamma = float(innovation.get("focal_gamma", 2.0))
+    focal_beta = float(innovation.get("focal_beta", 0.999))
+    prototype_lambda = float(innovation.get("prototype_lambda", 0.2))
+    prototype_temperature = float(innovation.get("prototype_temperature", 0.2))
+    balanced_sampler = bool(innovation.get("balanced_sampler", True))
 
     results: list[CustomRunResult] = []
     for fold_idx, fold_dir in enumerate(artifacts.fold_dirs):
@@ -307,6 +362,16 @@ def run_innovation_cv(
                 )
                 continue
             journal.write("innovation_run_start", {"fold": fold_idx, "variant": variant, "dataset_csv": str(dataset_csv)})
+            hparams = _variant_hparams(
+                variant,
+                lr=lr,
+                dropout=dropout,
+                balanced_sampler=balanced_sampler,
+                focal_gamma=focal_gamma,
+                focal_beta=focal_beta,
+                prototype_lambda=prototype_lambda,
+                prototype_temperature=prototype_temperature,
+            )
             result = run_custom_variant(
                 cfg=cfg,
                 dataset_csv=dataset_csv,
@@ -316,10 +381,13 @@ def run_innovation_cv(
                 num_classes=int(metadata["num_classes"]),
                 in_dim=in_dim,
                 epochs=epochs,
-                lr=lr,
-                dropout=dropout,
-                balanced_sampler=True,
-                prototype_lambda=0.2,
+                lr=float(hparams["lr"]),
+                dropout=float(hparams["dropout"]),
+                balanced_sampler=bool(hparams["balanced_sampler"]),
+                focal_gamma=float(hparams["focal_gamma"]),
+                focal_beta=float(hparams["focal_beta"]),
+                prototype_lambda=float(hparams["prototype_lambda"]),
+                prototype_temperature=float(hparams["prototype_temperature"]),
                 dry_run=dry_run,
             )
             results.append(result)
