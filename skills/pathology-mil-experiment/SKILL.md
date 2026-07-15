@@ -1,6 +1,6 @@
 ---
 name: pathology-mil-experiment
-description: Plan, run, iterate, and write manuscript-grade experimental sections for pathology AI projects using MIL, WSI features, MIL_BASELINE, or this auto-mil repository. Use when the user wants help with pathology classification, prognosis/survival, regression, baseline selection, split design, autonomous model innovation, hyperparameter tuning, ablation studies, experiment logging, git-traceable research workflows, or drafting Methods/Experiments/Results text for a pathology AI paper.
+description: Plan, run, iterate, package, and write manuscript-grade experimental sections for pathology AI projects using MIL, WSI features, MIL_BASELINE, or this auto-mil repository. Use when the user wants help with pathology classification, prognosis/survival, regression, baseline selection, split design, autonomous model innovation, hyperparameter tuning, ablation studies, experiment logging, git/GitHub-traceable research workflows, manuscript evidence packaging, or drafting Methods/Experiments/Results text for a pathology AI paper.
 ---
 
 # Pathology MIL Experiment
@@ -67,7 +67,15 @@ Run this as a staged research workflow with explicit user confirmations at decis
 10. Manuscript write-up.
    - Draft Methods and Experiments/Results in manuscript style after the evidence is stable.
    - Report dataset, preprocessing, split, baselines, implementation details, metrics, statistical treatment, main results, ablations, and limitations.
+   - In this repo, prefer `write-manuscript` to create `manuscript_draft.md` and `manuscript_evidence.json`, then `package-manuscript` to create a polishing prompt and submission checklist.
+   - Treat `llm_polish_prompt.md` as evidence-bounded: do not let polishing add claims not supported by the evidence manifest.
    - Do not overclaim from a single split or a small pilot.
+
+11. Version-control handoff.
+   - Keep code changes, generated experiment configs, and manuscript workflow changes in small commits with descriptive messages.
+   - Before pushing, verify `git status`, `git remote -v`, and the intended GitHub account/repository with the user.
+   - Never store GitHub passwords or personal access tokens in the repo or experiment logs.
+   - Push only after the user confirms the target remote.
 
 ## References
 
@@ -98,5 +106,6 @@ Always pause for user confirmation after:
 - autonomous loop budget, target metric, search scope, and stopping criteria
 - ablation matrix
 - final manuscript claims
+- remote repository or push target changes
 
 If the user explicitly approves a time-boxed autonomous loop, do not stop at every round for confirmation. Still log each decision and pause if the run needs to change data, split, primary metric, method family, compute budget, or final claims.
