@@ -9,6 +9,12 @@ description: Plan, run, iterate, package, and write manuscript-grade experimenta
 
 Run this as a staged research workflow with explicit user confirmations at decision gates. Do not jump straight into training unless the task, data, environment, split plan, baseline plan, and innovation plan are already clear and confirmed.
 
+## Innovation Integrity Rule
+
+Prioritize manuscript-worthy method innovation over engineering or tuning gains. Treat network architecture changes, MIL aggregation mechanisms, representation learning modules, pathology-aware inductive biases, objective/loss design, or principled training strategies as candidate method innovations. Treat hyperparameter tuning, ensembling, test-time aggregation, threshold tuning, seed search, longer training, data caching, and runtime optimizations as engineering/supportive techniques unless they are part of a clearly stated scientific method.
+
+Do not present engineering gains as the paper's main algorithmic contribution. Keep them in a separate "engineering/tuning/ensemble" track, useful for robustness, upper-bound analysis, or deployment, but not as the primary method claim. If the best metric comes from an ensemble or tuning-only recipe, report it honestly as auxiliary evidence and continue searching for a single-model or principled method innovation unless the user explicitly changes the goal.
+
 ## Required Workflow
 
 1. Clarify the task.
@@ -47,26 +53,35 @@ Run this as a staged research workflow with explicit user confirmations at decis
 
 7. Propose 1-2 innovation points and stop for confirmation.
    - Read the relevant MIL_BASELINE modules/configs before proposing changes.
-   - Innovations may be module-level, training-method-level, loss-level, data-sampling-level, or aggregation-level.
+   - Classify each candidate as one of:
+     - `method`: architecture, MIL aggregation, pathology-aware module, representation learning, loss/objective, or principled training mechanism suitable for a manuscript contribution.
+     - `support`: hyperparameter tuning, sampling schedule, caching, efficiency, thresholding, ensemble, or other engineering/analysis aid.
+   - Propose at least one `method` innovation before proposing support-only improvements.
+   - Innovations may be module-level, training-method-level, loss-level, data-sampling-level, or aggregation-level, but explain the scientific rationale and what ablation would isolate.
    - Keep the first innovation small enough to test and ablate cleanly.
 
 8. Autonomous improvement loop.
    - After the user confirms the innovation plan, ask for or define an autonomous run window: wall-clock time limit, maximum number of runs, target metric, allowed search space, hardware constraints, and stopping criteria.
+   - Separate the approved search scope into `method track` and `support track`. The method track is the primary route to the paper contribution; the support track can improve runtime, stability, or an auxiliary upper-bound result.
    - Within that confirmed window, run continuously without asking for confirmation after every round, as long as changes stay inside the approved innovation/search scope and do not change the split, data, primary metric, or manuscript claims.
    - For each round: propose idea -> implement or configure -> run -> parse metrics -> reflect -> keep/revert/refine.
+   - In every reflection, state whether the gain came from a method change or a support/tuning/ensemble change.
+   - If an ensemble, longer training, seed choice, or hyperparameter-only change reaches the target, mark the target as reached for the support track only. Continue method-track exploration within the remaining approved budget unless the user explicitly accepts support-track performance as the goal.
    - Optimize against the confirmed primary metric, but watch secondary metrics and overfitting.
    - For failed runs, classify the stdout/stderr with the repo log analyzer, then consult the failure policy before choosing the next action. Retry only when the policy keeps the approved data, split, metric, method family, and compute budget intact.
    - Keep a structured journal entry for every run, including command, config, code diff/commit, metric table, interpretation, and next action.
    - Continue until the target is reached, budget is exhausted, improvement plateaus, a safety/data-leakage risk appears, or the user stops the run.
 
 9. Ablation study.
-   - After finalizing the innovation, run ablations that isolate each component.
-   - Include baseline, full method, and one row per removed/changed component.
+   - After finalizing the innovation, run ablations that isolate each method component.
+   - Include baseline, full single-model method, and one row per removed/changed method component.
+   - Put support-track additions such as ensembles, threshold tuning, longer training, or hyperparameter changes in a separate auxiliary table unless they are essential to the proposed method.
    - Use the same split, seed policy, metrics, and reporting style as the main comparison.
 
 10. Manuscript write-up.
    - Draft Methods and Experiments/Results in manuscript style after the evidence is stable.
    - Report dataset, preprocessing, split, baselines, implementation details, metrics, statistical treatment, main results, ablations, and limitations.
+   - Clearly separate the claimed method contribution from engineering/tuning/ensemble results. Do not call an ensemble, seed search, or hyperparameter recipe a new algorithm unless it includes a principled methodological mechanism and ablation support.
    - In this repo, prefer `write-manuscript` to create `manuscript_draft.md` and `manuscript_evidence.json`, then `package-manuscript` to create a polishing prompt and submission checklist.
    - Treat `llm_polish_prompt.md` as evidence-bounded: do not let polishing add claims not supported by the evidence manifest.
    - Do not overclaim from a single split or a small pilot.
