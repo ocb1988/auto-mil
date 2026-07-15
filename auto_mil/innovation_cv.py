@@ -100,6 +100,7 @@ def run_custom_variant(
     focal_beta: float,
     prototype_lambda: float,
     prototype_temperature: float,
+    use_coords: bool,
     dry_run: bool,
 ) -> CustomRunResult:
     run_id = f"{variant.lower()}_fold{fold}"
@@ -145,6 +146,8 @@ def run_custom_variant(
     ]
     if balanced_sampler:
         command.append("--balanced-sampler")
+    if use_coords:
+        command.append("--use-coords")
 
     if dry_run:
         stdout_path.write_text(json.dumps({"command": command}, indent=2), encoding="utf-8")
@@ -215,6 +218,7 @@ def _variant_hparams(
         "focal_beta": focal_beta,
         "prototype_lambda": parsed_lambda if parsed_lambda is not None else prototype_lambda,
         "prototype_temperature": parsed_temperature if parsed_temperature is not None else prototype_temperature,
+        "use_coords": "COORD" in upper,
     }
 
 
@@ -388,6 +392,7 @@ def run_innovation_cv(
                 focal_beta=float(hparams["focal_beta"]),
                 prototype_lambda=float(hparams["prototype_lambda"]),
                 prototype_temperature=float(hparams["prototype_temperature"]),
+                use_coords=bool(hparams["use_coords"]),
                 dry_run=dry_run,
             )
             results.append(result)

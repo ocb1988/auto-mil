@@ -34,8 +34,9 @@ from .baseline_registry import assert_mil_baseline_root
 
 
 class WideWSIDataset(Dataset):
-    def __init__(self, dataset_csv: str | Path, split: str):
+    def __init__(self, dataset_csv: str | Path, split: str, use_coords: bool = False):
         self.dataset_csv = Path(dataset_csv)
+        self.use_coords = use_coords
         df = pd.read_csv(self.dataset_csv)
         self.slide_paths = df[f"{split}_slide_path"].dropna().astype(str).tolist()
         self.labels = [int(float(x)) for x in df[f"{split}_label"].dropna().tolist()]
@@ -49,6 +50,7 @@ class WideWSIDataset(Dataset):
         if path.endswith(".h5"):
             with h5py.File(path, "r") as h5:
                 feat = torch.from_numpy(np.array(h5["features"]))
+                coords = torch.from_numpy(np.array(h5["coords"])) if self.use_coords and "coords" in h5 else None
         else:
             try:
                 loaded = torch.load(path)
@@ -56,16 +58,30 @@ class WideWSIDataset(Dataset):
                 if "Weights only load failed" not in str(exc):
                     raise
                 loaded = torch.load(path, weights_only=False)
+            coords = None
             if isinstance(loaded, dict):
                 feat = loaded.get("feats", loaded.get("features"))
                 if feat is None:
                     raise ValueError(f"Unknown feature dict keys in {path}: {list(loaded)}")
+                if self.use_coords and "coords" in loaded:
+                    coords = loaded["coords"]
             else:
                 feat = loaded
         if isinstance(feat, np.ndarray):
             feat = torch.from_numpy(feat)
+        if isinstance(coords, np.ndarray):
+            coords = torch.from_numpy(coords)
         if len(feat.shape) == 3:
             feat = feat.squeeze(0)
+        if self.use_coords and coords is not None:
+            if len(coords.shape) == 3:
+                coords = coords.squeeze(0)
+            if coords.shape[0] == feat.shape[0] and coords.shape[-1] >= 2:
+                coords = coords[:, :2].float()
+                coords = coords - coords.min(dim=0, keepdim=True).values
+                scale = coords.max(dim=0, keepdim=True).values.clamp_min(1.0)
+                coords = coords / scale
+                feat = torch.cat([feat.float(), coords], dim=-1)
         return feat.float(), label
 
     def balanced_sampler(self) -> WeightedRandomSampler:
@@ -132,6 +148,7 @@ class TrainConfig:
     focal_beta: float
     prototype_lambda: float
     prototype_temperature: float
+    use_coords: bool
 
 
 def set_seed(seed: int) -> None:
@@ -263,9 +280,9 @@ def train(cfg: TrainConfig) -> Path:
     set_seed(cfg.seed)
     device = torch.device(f"cuda:{cfg.device}" if torch.cuda.is_available() else "cpu")
 
-    train_set = WideWSIDataset(cfg.dataset_csv, "train")
-    val_set = WideWSIDataset(cfg.dataset_csv, "val")
-    test_set = WideWSIDataset(cfg.dataset_csv, "test")
+    train_set = WideWSIDataset(cfg.dataset_csv, "train", use_coords=cfg.use_coords)
+    val_set = WideWSIDataset(cfg.dataset_csv, "val", use_coords=cfg.use_coords)
+    test_set = WideWSIDataset(cfg.dataset_csv, "test", use_coords=cfg.use_coords)
     generator = torch.Generator()
     generator.manual_seed(cfg.seed)
     if cfg.balanced_sampler:
@@ -377,6 +394,7 @@ def train(cfg: TrainConfig) -> Path:
         "focal_beta": cfg.focal_beta,
         "prototype_lambda": cfg.prototype_lambda,
         "prototype_temperature": cfg.prototype_temperature,
+        "use_coords": cfg.use_coords,
     }
     (cfg.output_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     return best_path
@@ -408,6 +426,7 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--focal-beta", type=float, default=0.999)
     parser.add_argument("--prototype-lambda", type=float, default=0.2)
     parser.add_argument("--prototype-temperature", type=float, default=0.2)
+    parser.add_argument("--use-coords", action="store_true")
     args = parser.parse_args()
     return TrainConfig(
         dataset_csv=Path(args.dataset_csv),
@@ -415,7 +434,7 @@ def parse_args() -> TrainConfig:
         output_dir=Path(args.output_dir),
         variant=args.variant,
         num_classes=args.num_classes,
-        in_dim=args.in_dim,
+        in_dim=args.in_dim + (2 if args.use_coords else 0),
         epochs=args.epochs,
         device=args.device,
         seed=args.seed,
@@ -426,6 +445,7 @@ def parse_args() -> TrainConfig:
         focal_beta=args.focal_beta,
         prototype_lambda=args.prototype_lambda,
         prototype_temperature=args.prototype_temperature,
+        use_coords=args.use_coords,
     )
 
 
