@@ -9,7 +9,7 @@ from .autonomous_window import AutonomousContract, run_autonomous_window
 from .config import load_config
 from .baseline_registry import available_models, resolve_mil_baseline_dir
 from .baseline_families import baseline_plan_to_payload, build_baseline_plan, write_baseline_plan
-from .data import prepare_cptac_brca
+from .data import prepare_cptac_brca, prepare_dataset
 from .cv import run_case_level_cv
 from .experiment_tree import run_qwbe_lite
 from .failure_policy import action_to_payload, decide_failure_action
@@ -36,6 +36,18 @@ def cmd_prepare_cptac(args: argparse.Namespace) -> None:
         label_column=args.label_column,
         min_class_count=args.min_class_count,
         seed=args.seed,
+    )
+    print(f"dataset_csv={artifacts.dataset_csv}")
+    print(f"h5_paths_csv={artifacts.h5_paths_csv}")
+    print(f"metadata_json={artifacts.metadata_json}")
+
+
+def cmd_prepare_data(args: argparse.Namespace) -> None:
+    cfg = load_config(args.config)
+    artifacts = prepare_dataset(
+        dataset=cfg.dataset_spec,
+        task=cfg.task_spec,
+        output_dir=Path(args.output_dir) if args.output_dir else cfg.output_dir / "dataset",
     )
     print(f"dataset_csv={artifacts.dataset_csv}")
     print(f"h5_paths_csv={artifacts.h5_paths_csv}")
@@ -72,10 +84,13 @@ def cmd_inspect_spec(args: argparse.Namespace) -> None:
     print(f"bag_level={dataset.bag_level}")
     print(f"data_dir={dataset.data_dir}")
     print(f"labels_csv={dataset.labels_csv}")
+    print(f"labels_sheet={dataset.labels_sheet}")
     print(f"case_id_column={dataset.case_id_column}")
+    print(f"slide_path_column={dataset.slide_path_column}")
     print(f"feature_format={dataset.feature.format}")
     print(f"feature_key={dataset.feature.feature_key}")
     print(f"coords_key={dataset.feature.coords_key}")
+    print(f"feature_glob={dataset.feature.feature_glob}")
     print(f"can_prepare_mil_baseline={str(payload['capabilities']['can_prepare_mil_baseline']).lower()}")
     if payload["capabilities"]["blocked_reason"]:
         print(f"blocked_reason={payload['capabilities']['blocked_reason']}")
@@ -459,6 +474,11 @@ def build_parser() -> argparse.ArgumentParser:
     prep.add_argument("--min-class-count", type=int, default=2)
     prep.add_argument("--seed", type=int, default=2024)
     prep.set_defaults(func=cmd_prepare_cptac)
+
+    prep_data = sub.add_parser("prepare-data", help="Prepare a generic configured dataset for MIL_BASELINE")
+    prep_data.add_argument("--config", required=True)
+    prep_data.add_argument("--output-dir", default=None, help="Directory for dataset.csv/h5_paths.csv/metadata.json")
+    prep_data.set_defaults(func=cmd_prepare_data)
 
     inspect = sub.add_parser("inspect-spec", help="Show normalized TaskSpec/DatasetSpec for a config")
     inspect.add_argument("--config", required=True)

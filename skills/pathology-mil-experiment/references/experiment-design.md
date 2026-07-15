@@ -26,12 +26,18 @@ Minimum exploration:
 - feature dimensions, patch counts, coordinate availability
 - train/val/test leakage risks
 
-For H5 feature bags, inspect representative files:
+For H5 or PT feature bags, inspect representative files:
 
 - keys
 - `features` shape and dtype
 - coordinates shape if present
 - masks/stitch thumbnails if present
+
+For numeric IHC-style labels such as Ki-67 percentage, confirm whether the
+study should be regression or thresholded classification. If using a threshold
+for a smoke test, record the exact rule, for example `Ki-67 >= 50%`, and avoid
+treating that pilot threshold as a final clinical claim until the user confirms
+the endpoint definition.
 
 ## Split Design
 

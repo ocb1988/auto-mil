@@ -6,6 +6,42 @@ import h5py
 import torch
 from torch.utils.data import Dataset
 
+def _load_feature_pt(slide_path):
+    try:
+        loaded = torch.load(slide_path)
+    except Exception as exc:
+        if "Weights only load failed" not in str(exc):
+            raise
+        loaded = torch.load(slide_path, weights_only=False)
+    if isinstance(loaded, dict):
+        if 'feats' in loaded:
+            feat = loaded['feats']
+        elif 'features' in loaded:
+            feat = loaded['features']
+        else:
+            raise ValueError(f"Unknown dict format in {slide_path}, keys: {list(loaded.keys())}")
+    else:
+        feat = loaded
+    if isinstance(feat, np.ndarray):
+        feat = torch.from_numpy(feat)
+    return feat
+
+
+def _load_coords_from_pt(slide_path):
+    try:
+        loaded = torch.load(slide_path)
+    except Exception as exc:
+        if "Weights only load failed" not in str(exc):
+            raise
+        loaded = torch.load(slide_path, weights_only=False)
+    if isinstance(loaded, dict) and 'coords' in loaded:
+        coords = loaded['coords']
+        if isinstance(coords, np.ndarray):
+            coords = torch.from_numpy(coords)
+        return coords
+    return None
+
+
 class WSI_Dataset(Dataset):
     def __init__(self,dataset_info_csv_path,group):
         assert group in ['train','val','test'], 'group must be in [train,val,test]'
@@ -29,15 +65,7 @@ class WSI_Dataset(Dataset):
                 feat = h5_file['features'][:]
                 feat = torch.from_numpy(feat)
         else:
-            feat = torch.load(slide_path)
-            # Handle dictionary format (e.g., {'feats': tensor, 'coords': tensor})
-            if isinstance(feat, dict):
-                if 'feats' in feat:
-                    feat = feat['feats']
-                elif 'features' in feat:
-                    feat = feat['features']
-                else:
-                    raise ValueError(f"Unknown dict format in {slide_path}, keys: {list(feat.keys())}")
+            feat = _load_feature_pt(slide_path)
         if len(feat.shape) == 3:
             feat = feat.squeeze(0)
         return feat,label
@@ -87,18 +115,8 @@ class WSI_Coord_Dataset(WSI_Dataset):
                 if 'coords' in h5_file:
                     coords = torch.from_numpy(np.array(h5_file['coords']))
         else:
-            loaded = torch.load(slide_path)
-            if isinstance(loaded, dict):
-                if 'feats' in loaded:
-                    feat = loaded['feats']
-                elif 'features' in loaded:
-                    feat = loaded['features']
-                else:
-                    raise ValueError(f"Unknown dict format in {slide_path}, keys: {list(loaded.keys())}")
-                if 'coords' in loaded:
-                    coords = loaded['coords']
-            else:
-                feat = loaded
+            feat = _load_feature_pt(slide_path)
+            coords = _load_coords_from_pt(slide_path)
 
         if len(feat.shape) == 3:
             feat = feat.squeeze(0)
@@ -132,7 +150,7 @@ class LONG_MIL_WSI_Dataset(WSI_Dataset):
         coords = torch.from_numpy(np.array(h5_file['coords']))
         label = int(self.labels_list[idx])
         label = torch.tensor(label)
-        feat = torch.load(slide_path) 
+        feat = _load_feature_pt(slide_path)
         if len(feat.shape) == 3:
             feat = feat.squeeze(0) # (N,D)
         if len(coords.shape) == 3:
@@ -189,7 +207,7 @@ class SC_MIL_WSI_Dataset(WSI_Dataset):
         label = torch.tensor(label)
         
         # Load features
-        feat = torch.load(slide_path)
+        feat = _load_feature_pt(slide_path)
         if len(feat.shape) == 3:
             feat = feat.squeeze(0)  # (N, D)
         

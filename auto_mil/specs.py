@@ -14,6 +14,10 @@ TaskKind = Literal["classification", "prognosis", "survival", "regression"]
 class TaskSpec:
     kind: TaskKind
     label_column: str | None = None
+    label_threshold: float | None = None
+    label_threshold_direction: str = "ge"
+    negative_label: str = "low"
+    positive_label: str = "high"
     target_column: str | None = None
     time_column: str | None = None
     event_column: str | None = None
@@ -56,6 +60,7 @@ class FeatureSpec:
     feature_key: str = "features"
     coords_key: str | None = None
     case_id_regex: str = r"^(?P<case>[A-Za-z0-9]+)-"
+    feature_glob: str | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +68,7 @@ class DatasetSpec:
     name: str
     data_dir: Path
     labels_csv: Path
+    labels_sheet: str | None = None
     bag_level: str = "case"
     case_id_column: str = "case_id"
     center_column: str | None = None
@@ -82,6 +88,10 @@ def task_spec_from_config(raw: dict[str, Any]) -> TaskSpec:
     return TaskSpec(
         kind=kind,  # type: ignore[arg-type]
         label_column=task.get("label_column"),
+        label_threshold=float(task["label_threshold"]) if task.get("label_threshold") is not None else None,
+        label_threshold_direction=str(task.get("label_threshold_direction", "ge")),
+        negative_label=str(task.get("negative_label", "low")),
+        positive_label=str(task.get("positive_label", "high")),
         target_column=task.get("target_column"),
         time_column=task.get("time_column"),
         event_column=task.get("event_column"),
@@ -103,6 +113,7 @@ def dataset_spec_from_config(raw: dict[str, Any]) -> DatasetSpec:
         name=str(dataset.get("name", raw.get("name", "dataset"))),
         data_dir=Path(dataset.get("data_dir", paths.get("data_dir", ""))),
         labels_csv=Path(dataset.get("labels_csv", paths.get("labels_csv", ""))),
+        labels_sheet=dataset.get("labels_sheet"),
         bag_level=str(dataset.get("bag_level", "case")).lower(),
         case_id_column=str(dataset.get("case_id_column", "case_id")),
         center_column=dataset.get("center_column"),
@@ -114,6 +125,7 @@ def dataset_spec_from_config(raw: dict[str, Any]) -> DatasetSpec:
             feature_key=str(feature.get("feature_key", "features")),
             coords_key=feature.get("coords_key"),
             case_id_regex=str(feature.get("case_id_regex", r"^(?P<case>[A-Za-z0-9]+)-")),
+            feature_glob=feature.get("feature_glob") or feature.get("glob"),
         ),
     )
 
@@ -123,16 +135,17 @@ def specs_to_payload(task: TaskSpec, dataset: DatasetSpec) -> dict[str, Any]:
 
 
 def describe_capabilities(task: TaskSpec, dataset: DatasetSpec) -> dict[str, Any]:
-    can_execute = task.kind == "classification" and dataset.feature.format == "h5"
+    supported_formats = {"h5", "pt"}
+    can_execute = task.kind == "classification" and dataset.feature.format.lower() in supported_formats
     return {
         "can_prepare_mil_baseline": can_execute,
         "supported_now": {
             "task_kind": "classification",
-            "feature_format": "h5",
+            "feature_format": sorted(supported_formats),
             "split_unit": "case/patient",
             "default_bag_level": "case",
         },
         "blocked_reason": None
         if can_execute
-        else "Current execution adapter supports classification with H5 feature bags.",
+        else "Current execution adapter supports classification with H5 or PT feature bags.",
     }

@@ -43,11 +43,14 @@ runner interface.
 
 2. `dataset_audit`
    - normalizes config into `TaskSpec` and `DatasetSpec`
-   - scans H5 files
+   - scans H5 files or recursive PT feature dictionaries
    - infers feature dimension from the configured feature key
    - joins slide files to `case_id`
+   - can threshold numeric labels into binary classes for classification pilots
    - materializes generated case-level H5 bags by concatenating all slide patch
-     features for each case when `dataset.bag_level: case` (default)
+     features for each case when `dataset.bag_level: case` (default), while
+     `dataset.bag_level: slide` keeps source feature paths for lightweight
+     slide-level smoke tests
    - splits by case to avoid patient leakage
    - writes MIL_BASELINE wide CSV
 
@@ -225,19 +228,22 @@ keeps the autonomous research state outside it.
 `specs.py` defines the front door for new projects:
 
 - `TaskSpec` captures classification, prognosis/survival, and regression
-  fields, plus split seed and default split ratios.
+  fields, optional numeric-label thresholding, plus split seed and default split
+  ratios.
 - `DatasetSpec` captures dataset paths, case id columns, center/cohort/external
-  test columns, H5 feature key, coordinate key, case-id filename regex, and
-  bag level.
+  test columns, optional slide path columns, labels sheet names, feature keys,
+  coordinate keys, case-id filename regex, recursive feature glob, and bag level.
 - `FeatureSpec` records the feature-bag format and key names.
 
-The current executable path supports classification with H5 feature bags.
+The current executable path supports classification with H5 feature bags or PT
+feature dictionaries containing `features`/`coords`.
 `dataset.bag_level` defaults to `case`: Auto-MIL writes one generated H5 bag per
 patient/case under `case_bags/`, with `features` equal to the concatenation of
 patch features from all source slides and `coords` concatenated when present.
-`dataset.bag_level: slide` is available only for deliberate slide-level MIL
-baselines. Other task kinds are represented but intentionally blocked at
-preparation time until a matching runner/metric adapter exists.
+`dataset.bag_level: slide` is available for deliberate slide-level MIL baselines
+or for fast smoke tests when each case has one feature bag. Other task kinds are
+represented but intentionally blocked at preparation time until a matching
+runner/metric adapter exists.
 
 ## Split Planner
 

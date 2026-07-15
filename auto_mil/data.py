@@ -10,6 +10,7 @@ from typing import Any
 import h5py
 import numpy as np
 import pandas as pd
+import torch
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from .specs import DatasetSpec, TaskSpec, specs_to_payload
@@ -37,6 +38,22 @@ def case_id_from_h5(path: Path, case_id_regex: str = CASE_RE.pattern) -> str:
     if not match:
         raise ValueError(f"Cannot infer case_id from H5 filename: {path.name}")
     return match.group("case")
+
+
+def _load_pt(path: Path) -> Any:
+    return torch.load(path, map_location="cpu", weights_only=False)
+
+
+def _array_from_pt_payload(payload: Any, key: str) -> np.ndarray:
+    if isinstance(payload, dict):
+        if key not in payload:
+            raise ValueError(f"PT payload does not contain key {key!r}")
+        value = payload[key]
+    else:
+        if key != "features":
+            raise ValueError(f"PT tensor payload only supports feature_key='features', got {key!r}")
+        value = payload
+    return np.asarray(value)
 
 
 def inspect_h5(path: Path, feature_key: str = "features", coords_key: str | None = None) -> dict[str, Any]:
@@ -67,6 +84,41 @@ def inspect_h5(path: Path, feature_key: str = "features", coords_key: str | None
         "keys": keys,
         "coords_shape": coords_shape,
     }
+
+
+def inspect_pt(path: Path, feature_key: str = "features", coords_key: str | None = None) -> dict[str, Any]:
+    payload = _load_pt(path)
+    features = _array_from_pt_payload(payload, feature_key)
+    if features.ndim == 3 and features.shape[0] == 1:
+        features = features[0]
+    elif features.ndim == 3:
+        features = features.reshape(-1, features.shape[-1])
+    if features.ndim != 2:
+        raise ValueError(f"Unsupported features shape in {path}: {features.shape}")
+    coords_shape = None
+    if coords_key and isinstance(payload, dict) and coords_key in payload:
+        coords = np.asarray(payload[coords_key])
+        coords_shape = tuple(int(x) for x in coords.shape)
+    keys = sorted(payload.keys()) if isinstance(payload, dict) else ["features"]
+    return {
+        "format": "pt",
+        "feature_key": feature_key,
+        "coords_key": coords_key,
+        "shape": tuple(int(x) for x in features.shape),
+        "n_patches": int(features.shape[0]),
+        "in_dim": int(features.shape[1]),
+        "keys": keys,
+        "coords_shape": coords_shape,
+    }
+
+
+def inspect_feature(path: Path, dataset: DatasetSpec) -> dict[str, Any]:
+    fmt = dataset.feature.format.lower()
+    if fmt == "h5":
+        return inspect_h5(path, feature_key=dataset.feature.feature_key, coords_key=dataset.feature.coords_key)
+    if fmt == "pt":
+        return inspect_pt(path, feature_key=dataset.feature.feature_key, coords_key=dataset.feature.coords_key)
+    raise NotImplementedError(f"Unsupported feature format: {dataset.feature.format}")
 
 
 def _split_cases(
@@ -125,7 +177,17 @@ def _safe_filename(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("._") or "case"
 
 
-def _read_feature_array(path: Path, feature_key: str) -> np.ndarray:
+def _read_feature_array(path: Path, dataset: DatasetSpec) -> np.ndarray:
+    feature_key = dataset.feature.feature_key
+    if dataset.feature.format.lower() == "pt":
+        features = _array_from_pt_payload(_load_pt(path), feature_key)
+        if features.ndim == 3 and features.shape[0] == 1:
+            features = features[0]
+        elif features.ndim == 3:
+            features = features.reshape(-1, features.shape[-1])
+        if features.ndim != 2:
+            raise ValueError(f"Unsupported feature shape in {path}: {features.shape}")
+        return features
     with h5py.File(path, "r") as h5:
         if feature_key not in h5:
             raise ValueError(f"{path} does not contain feature dataset {feature_key!r}")
@@ -139,9 +201,20 @@ def _read_feature_array(path: Path, feature_key: str) -> np.ndarray:
     return features
 
 
-def _read_coords_array(path: Path, coords_key: str | None) -> np.ndarray | None:
+def _read_coords_array(path: Path, dataset: DatasetSpec) -> np.ndarray | None:
+    coords_key = dataset.feature.coords_key
     if not coords_key:
         return None
+    if dataset.feature.format.lower() == "pt":
+        payload = _load_pt(path)
+        if not isinstance(payload, dict) or coords_key not in payload:
+            return None
+        coords = np.asarray(payload[coords_key])
+        if coords.ndim == 3 and coords.shape[0] == 1:
+            coords = coords[0]
+        elif coords.ndim == 3:
+            coords = coords.reshape(-1, coords.shape[-1])
+        return coords if coords.ndim == 2 else None
     with h5py.File(path, "r") as h5:
         if coords_key not in h5:
             return None
@@ -170,9 +243,9 @@ def _case_bag_table(slide_df: pd.DataFrame, output_dir: Path, dataset: DatasetSp
         coord_complete = True
         source_paths = [Path(path) for path in group["slide_path"].astype(str).tolist()]
         for source_path in source_paths:
-            features = _read_feature_array(source_path, dataset.feature.feature_key)
+            features = _read_feature_array(source_path, dataset)
             feature_arrays.append(features)
-            coords = _read_coords_array(source_path, dataset.feature.coords_key)
+            coords = _read_coords_array(source_path, dataset)
             if coords is None or coords.shape[0] != features.shape[0]:
                 coord_complete = False
             else:
@@ -217,66 +290,168 @@ def _training_bag_table(slide_df: pd.DataFrame, output_dir: Path, dataset: Datas
     return _case_bag_table(slide_df, output_dir, dataset)
 
 
+def _read_labels_table(path: Path, sheet: str | None = None) -> pd.DataFrame:
+    suffix = path.suffix.lower()
+    if suffix in {".xlsx", ".xls"}:
+        if sheet:
+            return pd.read_excel(path, sheet_name=sheet)
+        with pd.ExcelFile(path) as workbook:
+            for sheet_name in workbook.sheet_names:
+                frame = pd.read_excel(workbook, sheet_name=sheet_name)
+                if not frame.empty:
+                    return frame
+        raise ValueError(f"No non-empty sheet found in {path}")
+    return pd.read_csv(path)
+
+
+def _default_feature_glob(dataset: DatasetSpec) -> str:
+    fmt = dataset.feature.format.lower()
+    if fmt == "pt":
+        return "**/features/*.pt"
+    if fmt == "h5":
+        return "*.h5"
+    return f"**/*.{fmt}"
+
+
+def _discover_feature_paths(dataset: DatasetSpec) -> list[Path]:
+    pattern = dataset.feature.feature_glob or _default_feature_glob(dataset)
+    return sorted(path for path in dataset.data_dir.glob(pattern) if path.is_file())
+
+
+def _normalize_feature_path(path_value: Any, dataset: DatasetSpec) -> Path:
+    path = Path(str(path_value))
+    if path.is_absolute():
+        return path
+    return dataset.data_dir / path
+
+
+def _feature_paths_from_labels(labels: pd.DataFrame, dataset: DatasetSpec) -> list[Path]:
+    column = dataset.slide_path_column
+    if not column or column not in labels.columns:
+        return []
+    paths = [_normalize_feature_path(value, dataset) for value in labels[column].dropna().tolist()]
+    return sorted(dict.fromkeys(paths))
+
+
+def _explicit_case_by_path(labels: pd.DataFrame, dataset: DatasetSpec) -> dict[str, str]:
+    column = dataset.slide_path_column
+    if not column or column not in labels.columns:
+        return {}
+    mapping: dict[str, str] = {}
+    for _, row in labels.dropna(subset=[column, "case_id"]).iterrows():
+        mapping[str(_normalize_feature_path(row[column], dataset))] = str(row["case_id"])
+    return mapping
+
+
+def _apply_classification_label_transform(labels: pd.DataFrame, task: TaskSpec) -> tuple[pd.DataFrame, str, dict[str, Any]]:
+    label_column = task.outcome_column
+    if task.label_threshold is None:
+        labels[label_column] = labels[label_column].astype(str)
+        return labels, label_column, {}
+    transformed_column = f"{label_column}__threshold"
+    values = pd.to_numeric(labels[label_column], errors="coerce")
+    direction = task.label_threshold_direction.lower()
+    if direction in {"ge", ">=", "gte"}:
+        positive = values >= float(task.label_threshold)
+        rule = f"{label_column} >= {task.label_threshold}"
+    elif direction in {"gt", ">"}:
+        positive = values > float(task.label_threshold)
+        rule = f"{label_column} > {task.label_threshold}"
+    elif direction in {"le", "<=", "lte"}:
+        positive = values <= float(task.label_threshold)
+        rule = f"{label_column} <= {task.label_threshold}"
+    elif direction in {"lt", "<"}:
+        positive = values < float(task.label_threshold)
+        rule = f"{label_column} < {task.label_threshold}"
+    else:
+        raise ValueError(f"Unsupported label_threshold_direction={task.label_threshold_direction!r}")
+    labels = labels.copy()
+    labels[transformed_column] = np.where(positive, task.positive_label, task.negative_label)
+    labels.loc[values.isna(), transformed_column] = np.nan
+    return labels, transformed_column, {
+        "source_label_column": label_column,
+        "transformed_label_column": transformed_column,
+        "label_threshold": float(task.label_threshold),
+        "label_threshold_direction": task.label_threshold_direction,
+        "negative_label": task.negative_label,
+        "positive_label": task.positive_label,
+        "rule": rule,
+    }
+
+
 def _load_h5_classification_slide_table(
     dataset: DatasetSpec,
     task: TaskSpec,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, int], Counter, int, dict[str, Any]]:
     task.validate_for_mil_baseline()
-    if dataset.feature.format.lower() != "h5":
+    if dataset.feature.format.lower() not in {"h5", "pt"}:
         raise NotImplementedError(f"Unsupported feature format for MIL_BASELINE preparation: {dataset.feature.format}")
     data_dir = dataset.data_dir
     labels_csv = dataset.labels_csv
     label_column = task.outcome_column
 
-    h5_paths = sorted(data_dir.glob("*.h5"))
-    if not h5_paths:
-        raise FileNotFoundError(f"No H5 files found under {data_dir}")
     if not labels_csv.exists():
         raise FileNotFoundError(labels_csv)
 
-    labels = pd.read_csv(labels_csv)
+    labels = _read_labels_table(labels_csv, dataset.labels_sheet)
     if dataset.case_id_column not in labels.columns:
         raise ValueError(f"labels_csv must contain a {dataset.case_id_column!r} column")
     if label_column not in labels.columns:
         raise ValueError(f"labels_csv does not contain label column {label_column!r}")
+    labels, effective_label_column, label_transform = _apply_classification_label_transform(labels, task)
 
-    keep_columns = [dataset.case_id_column, label_column]
+    keep_columns = [dataset.case_id_column, label_column, effective_label_column]
     optional_columns = [
         dataset.center_column,
         dataset.cohort_column,
         dataset.external_test_column,
+        dataset.slide_path_column,
     ]
     keep_columns.extend([col for col in optional_columns if col and col in labels.columns])
+    keep_columns = list(dict.fromkeys(keep_columns))
     labels = labels[keep_columns].dropna(subset=[dataset.case_id_column, label_column]).copy()
+    labels = labels.dropna(subset=[effective_label_column]).copy()
     labels = labels.rename(columns={dataset.case_id_column: "case_id"})
     labels["case_id"] = labels["case_id"].astype(str)
-    labels[label_column] = labels[label_column].astype(str)
-    counts = labels[label_column].value_counts()
+    labels[effective_label_column] = labels[effective_label_column].astype(str)
+    counts = labels[effective_label_column].value_counts()
     keep_labels = set(counts[counts >= task.min_class_count].index)
-    labels = labels[labels[label_column].isin(keep_labels)].copy()
+    labels = labels[labels[effective_label_column].isin(keep_labels)].copy()
 
-    label_names = sorted(labels[label_column].unique().tolist())
+    if label_transform:
+        label_names = [task.negative_label, task.positive_label]
+        label_names = [name for name in label_names if name in set(labels[effective_label_column])]
+    else:
+        label_names = sorted(labels[effective_label_column].unique().tolist())
     label_to_id = {name: idx for idx, name in enumerate(label_names)}
-    labels[LABEL_ID_COL] = labels[label_column].map(label_to_id).astype(int)
+    labels[LABEL_ID_COL] = labels[effective_label_column].map(label_to_id).astype(int)
 
-    label_map_columns = [LABEL_ID_COL, label_column]
+    label_map_columns = [LABEL_ID_COL, effective_label_column]
     for optional in (dataset.center_column, dataset.cohort_column, dataset.external_test_column):
         if optional and optional in labels.columns and optional not in label_map_columns:
             label_map_columns.append(optional)
     label_map = labels.set_index("case_id")[label_map_columns].to_dict("index")
     slide_rows = []
     missing_cases = Counter()
-    for path in h5_paths:
-        case_id = case_id_from_h5(path, dataset.feature.case_id_regex)
+    missing_feature_paths = 0
+    feature_paths = _feature_paths_from_labels(labels, dataset) if dataset.slide_path_column else _discover_feature_paths(dataset)
+    if not feature_paths:
+        raise FileNotFoundError(f"No {dataset.feature.format.upper()} feature files found for {dataset.name} under {data_dir}")
+    explicit_by_path = _explicit_case_by_path(labels, dataset) if dataset.slide_path_column else {}
+    for path in feature_paths:
+        case_id = explicit_by_path.get(str(path)) or case_id_from_h5(path, dataset.feature.case_id_regex)
         if case_id not in label_map:
             missing_cases[case_id] += 1
+            continue
+        if not path.exists():
+            missing_feature_paths += 1
             continue
         item = label_map[case_id]
         row = {
             "case_id": case_id,
             "slide_path": str(path),
             "label": int(item[LABEL_ID_COL]),
-            "label_name": item[label_column],
+            "label_name": item[effective_label_column],
         }
         for optional in ("center_column", "cohort_column", "external_test_column"):
             source_col = getattr(dataset, optional)
@@ -293,12 +468,11 @@ def _load_h5_classification_slide_table(
         if optional and optional in slide_df.columns:
             case_columns.append(optional)
     case_df = slide_df[case_columns].drop_duplicates("case_id")
-    first_info = inspect_h5(
-        Path(slide_df.iloc[0]["slide_path"]),
-        feature_key=dataset.feature.feature_key,
-        coords_key=dataset.feature.coords_key,
-    )
-    return slide_df, case_df, label_to_id, missing_cases, len(h5_paths), first_info
+    first_info = inspect_feature(Path(slide_df.iloc[0]["slide_path"]), dataset)
+    first_info["missing_feature_paths"] = int(missing_feature_paths)
+    if label_transform:
+        first_info["label_transform"] = label_transform
+    return slide_df, case_df, label_to_id, missing_cases, len(feature_paths), first_info
 
 
 def _load_cptac_slide_table(
@@ -317,7 +491,7 @@ def _metadata_base(
     task: TaskSpec,
     label_to_id: dict[str, int],
     missing_cases: Counter,
-    num_h5_total: int,
+    num_feature_total: int,
     slide_df: pd.DataFrame,
     case_df: pd.DataFrame,
     first_info: dict[str, Any],
@@ -329,7 +503,9 @@ def _metadata_base(
         "dataset_spec": specs_to_payload(task, dataset)["dataset"],
         "label_to_id": label_to_id,
         "num_classes": len(label_to_id),
-        "num_h5_total": num_h5_total,
+        "num_feature_total": num_feature_total,
+        "num_feature_matched": int(len(slide_df)),
+        "num_h5_total": num_feature_total,
         "num_h5_matched": int(len(slide_df)),
         "num_cases": int(case_df.shape[0]),
         "missing_label_cases": dict(missing_cases),

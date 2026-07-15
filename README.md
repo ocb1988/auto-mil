@@ -5,7 +5,8 @@ Camyla-inspired autonomous research scaffold for multiple-instance learning
 
 This repository includes a vendored MIL baseline tree under
 `third_party/MIL_BASELINE` and orchestrates experiments on top of that bundled
-code by default, using H5 feature bags such as `K:\cptac-brca`.
+code by default, using H5 or PT feature bags such as `K:\cptac-brca` or a
+recursive WSI feature directory.
 
 ## What It Does
 
@@ -46,6 +47,13 @@ Generate a split plan and stop for confirmation:
 ```powershell
 & "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli plan-split `
   --config configs\cptac_brca_pam50.yaml
+```
+
+Prepare a generic configured dataset without launching training:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli prepare-data `
+  --config configs\gastric_ki67_binary50.yaml
 ```
 
 After confirming the plan, pass it into execution so the split is locked:
@@ -245,12 +253,15 @@ By default, outputs land under `runs/cptac_brca_pam50/`:
 ## Task/Data Interface
 
 Configuration is normalized into `TaskSpec` and `DatasetSpec`. The current
-runner supports classification with H5 feature bags and configurable feature
-keys. The default bag level is `case`, meaning multiple slides from the same
-patient/case are concatenated into one MIL bag before training. Set
-`dataset.bag_level: slide` only when intentionally running slide-level MIL.
-Prognosis/survival and regression fields are represented for the next adapters.
-See `docs/TASK_DATA_SPEC.md`.
+runner supports classification with H5 feature bags or PT feature dictionaries
+containing `features`/`coords`, configurable feature keys, recursive feature
+globs, CSV/XLSX label tables, and optional numeric-label thresholding for
+binary classification. The default bag level is `case`, meaning multiple slides
+from the same patient/case are concatenated into one MIL bag before training.
+Set `dataset.bag_level: slide` only when intentionally running slide-level MIL
+or when each case has exactly one feature bag and copying large features would
+only slow down a smoke test. Prognosis/survival and regression fields are
+represented for the next adapters. See `docs/TASK_DATA_SPEC.md`.
 
 ## Split Planner
 
