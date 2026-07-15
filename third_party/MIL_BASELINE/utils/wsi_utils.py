@@ -1,6 +1,7 @@
 import pandas as pd
 import math
 import os
+import hashlib
 import numpy as np
 import h5py
 import torch
@@ -42,9 +43,43 @@ def _load_coords_from_pt(slide_path):
     return None
 
 
+def _configured_max_patches(group):
+    raw = os.environ.get("AUTO_MIL_MAX_PATCHES", "").strip()
+    if not raw:
+        return None
+    try:
+        max_patches = int(raw)
+    except ValueError:
+        return None
+    if max_patches <= 0:
+        return None
+    groups = {
+        item.strip().lower()
+        for item in os.environ.get("AUTO_MIL_MAX_PATCHES_GROUPS", "train,val,test").split(",")
+        if item.strip()
+    }
+    if group.lower() not in groups:
+        return None
+    return max_patches
+
+
+def _deterministic_patch_sample(feat, max_patches, key):
+    if max_patches is None or feat.shape[0] <= max_patches:
+        return feat
+    digest = hashlib.sha256(str(key).encode("utf-8")).digest()
+    seed = int.from_bytes(digest[:8], "little") % (2**63 - 1)
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(seed)
+    indices = torch.randperm(feat.shape[0], generator=generator)[:max_patches]
+    indices = torch.sort(indices).values.to(feat.device)
+    return feat.index_select(0, indices)
+
+
 class WSI_Dataset(Dataset):
     def __init__(self,dataset_info_csv_path,group):
         assert group in ['train','val','test'], 'group must be in [train,val,test]'
+        self.group = group
+        self.max_patches = _configured_max_patches(group)
         self.dataset_info_csv_path = dataset_info_csv_path
         self.dataset_df = pd.read_csv(self.dataset_info_csv_path)
         self.slide_path_list = self.dataset_df[group+'_slide_path'].dropna().to_list()
@@ -68,6 +103,7 @@ class WSI_Dataset(Dataset):
             feat = _load_feature_pt(slide_path)
         if len(feat.shape) == 3:
             feat = feat.squeeze(0)
+        feat = _deterministic_patch_sample(feat, self.max_patches, f"{self.group}:{slide_path}")
         return feat,label
 
     def is_None_Dataset(self):
@@ -126,6 +162,7 @@ class WSI_Coord_Dataset(WSI_Dataset):
             coords = coords.to(feat.device).float()
             if coords.shape[0] == feat.shape[0] and coords.shape[-1] >= 2:
                 feat = torch.cat([feat, coords[:, :2]], dim=-1)
+        feat = _deterministic_patch_sample(feat, self.max_patches, f"{self.group}:{slide_path}")
         return feat, label
 
     
@@ -156,6 +193,11 @@ class LONG_MIL_WSI_Dataset(WSI_Dataset):
         if len(coords.shape) == 3:
             coords = coords.squeeze(0) # (N,2)
         feat_with_coords = torch.cat([feat, coords], dim=-1) # (N,D+2) 
+        feat_with_coords = _deterministic_patch_sample(
+            feat_with_coords,
+            self.max_patches,
+            f"{self.group}:{slide_path}",
+        )
         return feat_with_coords,label 
     
     def _find_h5_path_by_slide_name(self, slide_name, h5_paths_list):
@@ -234,6 +276,11 @@ class SC_MIL_WSI_Dataset(WSI_Dataset):
         
         # Concatenate features and coords
         feat_with_coords = torch.cat([feat, coords], dim=-1)  # (N, D+2)
+        feat_with_coords = _deterministic_patch_sample(
+            feat_with_coords,
+            self.max_patches,
+            f"{self.group}:{slide_path}",
+        )
         return feat_with_coords, label
     
     def _find_h5_path_by_slide_name(self, slide_name, h5_paths_list):

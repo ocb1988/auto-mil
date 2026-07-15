@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import hashlib
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -224,6 +225,93 @@ def _read_coords_array(path: Path, dataset: DatasetSpec) -> np.ndarray | None:
     elif coords.ndim == 3:
         coords = coords.reshape(-1, coords.shape[-1])
     return coords if coords.ndim == 2 else None
+
+
+def _sample_rows_deterministic(array: np.ndarray, max_rows: int | None, key: str) -> tuple[np.ndarray, np.ndarray | None]:
+    if max_rows is None or max_rows <= 0 or array.shape[0] <= max_rows:
+        return array, None
+    digest = hashlib.sha256(key.encode("utf-8")).digest()
+    seed = int.from_bytes(digest[:8], "little") % (2**32 - 1)
+    rng = np.random.default_rng(seed)
+    indices = np.sort(rng.choice(array.shape[0], size=max_rows, replace=False))
+    return array[indices], indices
+
+
+def _cache_sampled_slide_features(
+    slide_df: pd.DataFrame,
+    output_dir: Path,
+    dataset: DatasetSpec,
+    max_patches_per_bag: int | None,
+) -> tuple[pd.DataFrame, dict[str, Any] | None]:
+    if max_patches_per_bag is None or max_patches_per_bag <= 0 or dataset.bag_level != "slide":
+        return slide_df, None
+
+    cache_dir = output_dir / f"feature_cache_max{max_patches_per_bag}"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = cache_dir / "manifest.csv"
+    manifest_by_cache: dict[str, dict[str, Any]] = {}
+    if manifest_path.exists():
+        manifest_df = pd.read_csv(manifest_path)
+        if "cache_path" in manifest_df.columns:
+            manifest_by_cache = {
+                str(row["cache_path"]): row for row in manifest_df.to_dict("records")
+            }
+    cached_rows = []
+    manifest_rows = []
+    for row in slide_df.to_dict("records"):
+        source_path = Path(str(row["slide_path"]))
+        path_hash = hashlib.sha1(str(source_path).encode("utf-8")).hexdigest()[:10]
+        cache_path = cache_dir / f"{_safe_filename(str(row['case_id']))}_{path_hash}.pt"
+        existing = manifest_by_cache.get(str(cache_path))
+        if cache_path.exists() and existing is not None:
+            updated = dict(row)
+            updated["source_slide_path"] = str(source_path)
+            updated["slide_path"] = str(cache_path)
+            updated["n_patches_original"] = int(existing.get("n_patches_original", 0) or 0)
+            updated["n_patches"] = int(existing.get("n_patches_cached", max_patches_per_bag) or max_patches_per_bag)
+            cached_rows.append(updated)
+            manifest_rows.append(existing)
+            continue
+
+        features = _read_feature_array(source_path, dataset)
+        sampled_features, indices = _sample_rows_deterministic(
+            features,
+            int(max_patches_per_bag),
+            str(source_path),
+        )
+        payload: dict[str, Any] = {"features": sampled_features}
+        coords = _read_coords_array(source_path, dataset)
+        coords_cached = False
+        if coords is not None and coords.shape[0] == features.shape[0]:
+            payload["coords"] = coords if indices is None else coords[indices]
+            coords_cached = True
+        if not cache_path.exists():
+            torch.save(payload, cache_path)
+        updated = dict(row)
+        updated["source_slide_path"] = str(source_path)
+        updated["slide_path"] = str(cache_path)
+        updated["n_patches_original"] = int(features.shape[0])
+        updated["n_patches"] = int(sampled_features.shape[0])
+        cached_rows.append(updated)
+        manifest_rows.append(
+            {
+                "case_id": row["case_id"],
+                "cache_path": str(cache_path),
+                "source_slide_path": str(source_path),
+                "n_patches_original": int(features.shape[0]),
+                "n_patches_cached": int(sampled_features.shape[0]),
+                "coords_cached": bool(coords_cached),
+            }
+        )
+
+    pd.DataFrame(manifest_rows).to_csv(manifest_path, index=False)
+    metadata = {
+        "feature_cache_dir": str(cache_dir),
+        "feature_cache_manifest": str(manifest_path),
+        "max_patches_per_bag": int(max_patches_per_bag),
+        "num_cached_bags": int(len(cached_rows)),
+    }
+    return pd.DataFrame(cached_rows), metadata
 
 
 def _case_bag_table(slide_df: pd.DataFrame, output_dir: Path, dataset: DatasetSpec) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -647,12 +735,19 @@ def prepare_dataset_kfold(
     task: TaskSpec,
     output_dir: str | Path,
     n_splits: int = 5,
+    max_patches_per_bag: int | None = None,
 ) -> KFoldArtifacts:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     slide_df, case_df, label_to_id, missing_cases, num_h5_total, first_info = _load_h5_classification_slide_table(
         dataset,
         task,
+    )
+    slide_df, feature_cache_metadata = _cache_sampled_slide_features(
+        slide_df,
+        output_dir,
+        dataset,
+        max_patches_per_bag,
     )
 
     min_class = int(case_df["label_name"].value_counts().min())
@@ -742,6 +837,8 @@ def prepare_dataset_kfold(
             "folds": fold_summaries,
         }
     )
+    if feature_cache_metadata:
+        metadata["feature_cache"] = feature_cache_metadata
     metadata_json = output_dir / "metadata.json"
     with metadata_json.open("w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)

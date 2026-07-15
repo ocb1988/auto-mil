@@ -166,6 +166,8 @@ def run_case_level_cv(
     dataset = cfg.dataset_spec
     training = cfg.raw.get("training", {})
     search = cfg.raw.get("search", {})
+    raw_max_patches = training.get("max_patches_per_bag")
+    max_patches_per_bag = int(raw_max_patches) if raw_max_patches not in (None, "", 0) else None
 
     selected_split = None
     if split_plan_path is not None:
@@ -184,6 +186,7 @@ def run_case_level_cv(
             task=task,
             output_dir=output_dir / "folds",
             n_splits=n_splits,
+            max_patches_per_bag=max_patches_per_bag,
         )
     metadata = _load_json(artifacts.metadata_json)
     checkpoint.update_metadata(
@@ -240,6 +243,7 @@ def run_case_level_cv(
                 device=int(training.get("device", 0)),
                 num_workers=int(training.get("num_workers", 0)),
                 best_metric=str(training.get("best_metric", "macro_auc")),
+                max_patches_per_bag=max_patches_per_bag,
                 dry_run=dry_run,
             )
             results.append(result)

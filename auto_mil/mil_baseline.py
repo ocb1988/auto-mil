@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import os
 import subprocess
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -96,6 +97,7 @@ def build_mil_config(
     device: int,
     num_workers: int,
     best_metric: str,
+    max_patches_per_bag: int | None = None,
 ) -> Path:
     with base_config_path.open("r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
@@ -112,6 +114,8 @@ def build_mil_config(
     cfg["Dataset"]["DATASET_NAME"] = dataset_name
     cfg["Dataset"]["dataset_csv_path"] = str(dataset_csv_path)
     cfg["Dataset"].pop("dataset_root_dir", None)
+    if max_patches_per_bag is not None and int(max_patches_per_bag) > 0:
+        cfg["Dataset"]["max_patches"] = int(max_patches_per_bag)
     cfg["Dataset"].setdefault("balanced_sampler", {})
     if isinstance(cfg["Dataset"]["balanced_sampler"], dict):
         cfg["Dataset"]["balanced_sampler"]["use"] = bool(recipe.balanced_sampler)
@@ -172,6 +176,7 @@ def run_recipe(
     device: int,
     num_workers: int,
     best_metric: str,
+    max_patches_per_bag: int | None = None,
     dry_run: bool = False,
     timeout_seconds: int | None = None,
 ) -> RunResult:
@@ -202,6 +207,7 @@ def run_recipe(
         device,
         num_workers,
         best_metric,
+        max_patches_per_bag=max_patches_per_bag,
     )
 
     command = [str(python), "train_mil.py", "--yaml_path", str(config_path)]
@@ -221,11 +227,17 @@ def run_recipe(
         )
 
     timed_out = False
+    env = os.environ.copy()
+    if max_patches_per_bag is not None and int(max_patches_per_bag) > 0:
+        env["AUTO_MIL_MAX_PATCHES"] = str(int(max_patches_per_bag))
+        env.setdefault("AUTO_MIL_MAX_PATCHES_GROUPS", "train,val,test")
+
     with stdout_path.open("w", encoding="utf-8") as stdout:
         try:
             proc = subprocess.run(
                 command,
                 cwd=str(mil_baseline_dir),
+                env=env,
                 stdout=stdout,
                 stderr=subprocess.STDOUT,
                 text=True,

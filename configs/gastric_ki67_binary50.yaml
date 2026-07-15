@@ -40,6 +40,7 @@ training:
   best_metric: macro_auc
   balanced_sampler: false
   cv_balanced_sampler: false
+  max_patches_per_bag: 1024
   in_dim: auto
 
 search:
