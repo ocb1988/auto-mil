@@ -120,6 +120,67 @@ Each run should record:
 - interpretation
 - next action
 
+## Camyla-Style Proposal Discipline
+
+Before entering the innovation loop, run a pre-innovation literature/proposal
+step. Ask the user for seed papers, method drafts, or proposal notes first. If
+the user provides them, treat those sources as the evidence base. If not, run
+one lightweight online search and save the resulting proposal seeds:
+
+```powershell
+python -m auto_mil.cli literature-search --config configs\my_experiment.yaml
+```
+
+With user-provided sources:
+
+```powershell
+python -m auto_mil.cli literature-search --config configs\my_experiment.yaml --user-sources papers.json --offline
+```
+
+Do not perform online literature search at every experimental round. Refresh the
+search only when the method track plateaus, the proposal is judged infeasible,
+or the user explicitly asks for new literature. Keep the search report as
+evidence and ask the user to confirm the selected proposal(s) before code
+changes.
+
+For method-track ideas, write a proposal record before coding:
+
+- `name`: concise method name
+- `track`: `method`
+- `motivation`: pathology/MIL problem addressed
+- `core_modules`: 1-3 named components with mechanisms
+- `implementation_constraints`: feature shape, coordinate, memory, and runtime constraints
+- `allowed_adaptations`: compatibility-only changes such as dimension, dropout, or learning-rate adjustment
+- `forbidden_simplifications`: components that must not be replaced by identity/plain MLP/helper-only code
+- `ablation_plan`: one component removed or disabled per row
+
+Support-track changes can be run inside the same autonomous window, but label them
+as `support` and keep them out of the main method claim. If a support change
+beats the target, keep searching the method track unless the user changes the
+goal.
+
+When using this repo's experiment tree, optional method proposals can be placed
+in config YAML:
+
+```yaml
+innovation:
+  method_proposals:
+    - name: focal_proto_abmil
+      model_name: AB_MIL
+      core_modules:
+        - class-balanced focal objective
+        - prototype auxiliary head
+      ablation_plan:
+        - remove focal objective
+        - remove prototype auxiliary head
+      support_tags:
+        - compatibility hyperparameters fixed before final comparison
+      config_overrides: {}
+```
+
+The generated proposal report and experiment-tree report should show
+`innovation_track`, `core_modules`, `support_tags`, and `ablation_plan`.
+
 ## Ablation Matrix
 
 For a method with two innovations A and B:

@@ -7,6 +7,7 @@ from typing import Any
 
 from .config import AutoMilConfig
 from .data import prepare_dataset_kfold
+from .innovation_policy import classify_variant
 from .innovation_cv import (
     CustomRunResult,
     custom_result_from_payload,
@@ -24,13 +25,15 @@ class AblationVariant:
     focal_loss: bool
     prototype_head: bool
     description: str
+    track: str = "method"
+    ablates: str = ""
 
 
 DEFAULT_ABLATIONS = [
-    AblationVariant("AB_MIL_CE", False, False, "Baseline AB_MIL with cross entropy."),
-    AblationVariant("AB_MIL_FOCAL", True, False, "Add class-balanced focal loss only."),
-    AblationVariant("AB_MIL_PROTO", False, True, "Add prototype auxiliary head only."),
-    AblationVariant("AB_MIL_FOCAL_PROTO", True, True, "Full method: focal loss plus prototype head."),
+    AblationVariant("AB_MIL_CE", False, False, "Baseline AB_MIL with cross entropy.", "baseline", "all method components removed"),
+    AblationVariant("AB_MIL_FOCAL", True, False, "Add class-balanced focal loss only.", "method", "prototype head removed"),
+    AblationVariant("AB_MIL_PROTO", False, True, "Add prototype auxiliary head only.", "method", "focal objective removed"),
+    AblationVariant("AB_MIL_FOCAL_PROTO", True, True, "Full method: focal loss plus prototype head.", "method", "none"),
 ]
 
 
@@ -43,12 +46,15 @@ def _variant_map(variants: list[str] | None = None) -> list[AblationVariant]:
         if variant in known:
             out.append(known[variant])
         else:
+            policy = classify_variant(variant)
             out.append(
                 AblationVariant(
                     variant=variant,
                     focal_loss="FOCAL" in variant.upper(),
                     prototype_head="PROTO" in variant.upper(),
                     description="Custom ablation variant inferred from its name.",
+                    track=policy.track,
+                    ablates=", ".join(policy.core_modules) if policy.core_modules else "custom",
                 )
             )
     return out
@@ -72,18 +78,18 @@ def _write_ablation_report(
         "",
         "## Matrix",
         "",
-        "| Variant | Focal loss | Prototype head | Description |",
-        "|---|---|---|---|",
+        "| Variant | Track | Focal loss | Prototype head | Ablates | Description |",
+        "|---|---|---|---|---|---|",
     ]
     for item in variants:
-        lines.append(f"| {item.variant} | {item.focal_loss} | {item.prototype_head} | {item.description} |")
+        lines.append(f"| {item.variant} | {item.track} | {item.focal_loss} | {item.prototype_head} | {item.ablates} | {item.description} |")
     lines.extend(
         [
             "",
             "## Mean Metrics",
             "",
-            "| Rank | Variant | Focal | Prototype | Completed | Test macro AUC | Test BACC | Test macro F1 | Test ACC | Val macro AUC |",
-            "|---:|---|---|---|---:|---:|---:|---:|---:|---:|",
+            "| Rank | Variant | Track | Focal | Prototype | Completed | Test macro AUC | Test BACC | Test macro F1 | Test ACC | Val macro AUC |",
+            "|---:|---|---|---|---|---:|---:|---:|---:|---:|---:|",
         ]
     )
     for rank, (variant, row) in enumerate(ranked, start=1):
@@ -97,7 +103,7 @@ def _write_ablation_report(
             return f"{m:.4f} +/- {s:.4f}"
 
         lines.append(
-            f"| {rank} | {variant} | {getattr(meta, 'focal_loss', '')} | {getattr(meta, 'prototype_head', '')} | "
+            f"| {rank} | {variant} | {getattr(meta, 'track', '')} | {getattr(meta, 'focal_loss', '')} | {getattr(meta, 'prototype_head', '')} | "
             f"{row.get('n_completed', 0)}/{row.get('n_total', 0)} | {fmt('test_macro_auc')} | "
             f"{fmt('test_bacc')} | {fmt('test_macro_f1')} | {fmt('test_acc')} | {fmt('val_macro_auc')} |"
         )
@@ -137,6 +143,8 @@ def run_ablation_cv(
     dataset = cfg.dataset_spec
     training = cfg.raw.get("training", {})
     search = cfg.raw.get("search", {})
+    raw_max_patches = training.get("max_patches_per_bag")
+    max_patches_per_bag = int(raw_max_patches) if raw_max_patches not in (None, "", 0) else None
     selected_split = None
     if split_plan_path is not None:
         selected_split = select_split_plan(split_plan_path, split_plan_id)
@@ -163,7 +171,12 @@ def run_ablation_cv(
     in_dim_cfg = training.get("in_dim", "auto")
     in_dim = int(metadata["feature"]["in_dim"] if in_dim_cfg == "auto" else in_dim_cfg)
     lr = float(search.get("learning_rates", [0.0002])[0])
-    dropout = 0.25
+    innovation = cfg.raw.get("innovation", {})
+    dropout = float(innovation.get("dropout", 0.25))
+    focal_gamma = float(innovation.get("focal_gamma", 2.0))
+    focal_beta = float(innovation.get("focal_beta", 0.999))
+    prototype_lambda = float(innovation.get("prototype_lambda", 0.2))
+    prototype_temperature = float(innovation.get("prototype_temperature", 0.2))
     matrix = _variant_map(variants)
     results: list[CustomRunResult] = []
     for fold_idx, fold_dir in enumerate(artifacts.fold_dirs):
@@ -192,7 +205,17 @@ def run_ablation_cv(
                 lr=lr,
                 dropout=dropout,
                 balanced_sampler=True,
-                prototype_lambda=0.2,
+                focal_gamma=focal_gamma,
+                focal_beta=focal_beta,
+                prototype_lambda=prototype_lambda,
+                prototype_temperature=prototype_temperature,
+                topk=8,
+                instance_alpha=0.5,
+                num_routes=4,
+                route_temperature=0.2,
+                confidence_alpha=1.0,
+                max_patches_per_bag=max_patches_per_bag,
+                use_coords="COORD" in item.variant.upper(),
                 dry_run=dry_run,
             )
             results.append(result)

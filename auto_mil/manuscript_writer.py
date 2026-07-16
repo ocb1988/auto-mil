@@ -23,6 +23,8 @@ class EvidenceIndex:
     prediction_report: str | None = None
     figure_report: str | None = None
     ablation_report: str | None = None
+    innovation_report: str | None = None
+    innovation_summary_json: str | None = None
     baseline_plan: str | None = None
     split_plan: str | None = None
 
@@ -97,6 +99,8 @@ def discover_evidence(root: str | Path) -> EvidenceIndex:
         prediction_report=_first_existing(root, ["prediction_aggregation/prediction_report.md"]),
         figure_report=_first_existing(root, ["prediction_aggregation/figures/figure_report.md"]),
         ablation_report=_first_existing(root, ["ablation_cv/ablation_cv_report.md"]),
+        innovation_report=_first_existing(root, ["innovation_cv/innovation_cv_report.md"]),
+        innovation_summary_json=_first_existing(root, ["innovation_cv/innovation_cv_summary.json"]),
         baseline_plan=_first_existing(root, ["baseline_plan/baseline_plan.md"]),
         split_plan=_first_existing(root, ["split_plan/split_plan.md"]),
     )
@@ -247,6 +251,8 @@ def _render_draft(
         _artifact_line("Statistical report", evidence.stats_report),
         _artifact_line("Prediction report", evidence.prediction_report),
         _artifact_line("Figure report", evidence.figure_report),
+        _artifact_line("Innovation report", evidence.innovation_report),
+        _artifact_line("Innovation summary", evidence.innovation_summary_json),
         _artifact_line("Ablation report", evidence.ablation_report),
         "",
         "## Methods",
@@ -287,7 +293,8 @@ def _render_draft(
         (
             "Baseline selection followed a manuscript-oriented MIL suite including classic attention MIL, transformer/long-context MIL, "
             "RRT-style MIL, and recent MIL methods when compatible with the local runtime. The proposed method and ablation variants "
-            "were run under the same split policy and metric contract as the baselines."
+            "were run under the same split policy and metric contract as the baselines. Method-track changes were separated from "
+            "support-track changes such as ensembling, thresholding, seed search, or hyperparameter-only tuning."
         ),
         "",
         "### Evaluation",
@@ -311,9 +318,24 @@ def _render_draft(
             "shows completed training runs and the statistical report is available."
         ),
         "",
-        "### Statistical Analysis",
+        "### Method Innovation Integrity",
         "",
     ]
+    innovation_excerpt = _read_excerpt(evidence.innovation_report)
+    if innovation_excerpt:
+        lines.extend(innovation_excerpt)
+    else:
+        lines.append("No innovation-track report was available.")
+    lines.extend(
+        [
+            "",
+            "Method-track rows may be used to support the proposed algorithm only when their core modules are described and ablated. "
+            "Support-track rows should be reported as auxiliary robustness, tuning, or upper-bound evidence rather than as the main method contribution.",
+            "",
+            "### Statistical Analysis",
+            "",
+        ]
+    )
     stats_excerpt = _read_excerpt(evidence.stats_report)
     lines.extend(stats_excerpt or ["No statistical report was available."])
     lines.extend(["", "### Prediction Figures and Error Analysis", ""])
@@ -341,6 +363,7 @@ def _render_draft(
             "",
             "- Do not claim state-of-the-art performance unless the baseline suite, split policy, and external validation match the target literature.",
             "- Do not claim clinical deployability without external validation, calibration analysis, and prospective or multi-center evidence.",
+            "- Do not describe support-track improvements such as ensemble, seed search, threshold tuning, or hyperparameter-only recipes as the main algorithmic contribution.",
             "- Treat dry-run, failed, or incomplete experiments as workflow validation only.",
         ]
     )

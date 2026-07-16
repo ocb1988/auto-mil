@@ -6,6 +6,7 @@ import json
 import math
 import os
 import random
+import hashlib
 import sys
 import time
 from dataclasses import dataclass
@@ -34,9 +35,22 @@ from .baseline_registry import assert_mil_baseline_root
 
 
 class WideWSIDataset(Dataset):
-    def __init__(self, dataset_csv: str | Path, split: str, use_coords: bool = False):
+    def __init__(
+        self,
+        dataset_csv: str | Path,
+        split: str,
+        use_coords: bool = False,
+        max_patches_per_bag: int | None = None,
+        seed: int = 0,
+        cache_dir: str | Path | None = None,
+    ):
         self.dataset_csv = Path(dataset_csv)
         self.use_coords = use_coords
+        self.max_patches_per_bag = max_patches_per_bag
+        self.seed = seed + {"train": 0, "val": 100_000, "test": 200_000}.get(split, 300_000)
+        self.cache_dir = Path(cache_dir) if cache_dir else None
+        if self.cache_dir is not None:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
         df = pd.read_csv(self.dataset_csv)
         self.slide_paths = df[f"{split}_slide_path"].dropna().astype(str).tolist()
         self.labels = [int(float(x)) for x in df[f"{split}_label"].dropna().tolist()]
@@ -47,6 +61,14 @@ class WideWSIDataset(Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         path = self.slide_paths[idx]
         label = torch.tensor(self.labels[idx], dtype=torch.long)
+        cache_path = self._cache_path(path, idx)
+        if cache_path is not None and cache_path.exists():
+            loaded_cache = torch.load(cache_path, map_location="cpu", weights_only=False)
+            feat = loaded_cache["features"]
+            coords = loaded_cache.get("coords")
+            if self.use_coords and coords is not None:
+                feat = self._append_coords(feat, coords)
+            return feat.float(), label
         if path.endswith(".h5"):
             with h5py.File(path, "r") as h5:
                 feat = torch.from_numpy(np.array(h5["features"]))
@@ -73,16 +95,41 @@ class WideWSIDataset(Dataset):
             coords = torch.from_numpy(coords)
         if len(feat.shape) == 3:
             feat = feat.squeeze(0)
+        if self.max_patches_per_bag is not None and feat.shape[0] > self.max_patches_per_bag:
+            generator = torch.Generator()
+            generator.manual_seed(self.seed + idx)
+            keep = torch.randperm(feat.shape[0], generator=generator)[: self.max_patches_per_bag].sort().values
+            feat = feat.index_select(0, keep)
+            if coords is not None and coords.shape[0] >= int(keep.max()) + 1:
+                coords = coords.index_select(0, keep)
+        if cache_path is not None:
+            payload = {"features": feat.float().cpu()}
+            if coords is not None:
+                payload["coords"] = coords.float().cpu()
+            tmp_path = cache_path.with_suffix(".tmp")
+            torch.save(payload, tmp_path)
+            os.replace(tmp_path, cache_path)
         if self.use_coords and coords is not None:
-            if len(coords.shape) == 3:
-                coords = coords.squeeze(0)
-            if coords.shape[0] == feat.shape[0] and coords.shape[-1] >= 2:
-                coords = coords[:, :2].float()
-                coords = coords - coords.min(dim=0, keepdim=True).values
-                scale = coords.max(dim=0, keepdim=True).values.clamp_min(1.0)
-                coords = coords / scale
-                feat = torch.cat([feat.float(), coords], dim=-1)
+            feat = self._append_coords(feat, coords)
         return feat.float(), label
+
+    def _cache_path(self, path: str, idx: int) -> Path | None:
+        if self.cache_dir is None or self.max_patches_per_bag is None:
+            return None
+        key = f"{Path(path).resolve()}|{self.seed + idx}|{self.max_patches_per_bag}".encode("utf-8", errors="ignore")
+        return self.cache_dir / f"{hashlib.sha1(key).hexdigest()}.pt"
+
+    @staticmethod
+    def _append_coords(feat: torch.Tensor, coords: torch.Tensor) -> torch.Tensor:
+        if len(coords.shape) == 3:
+            coords = coords.squeeze(0)
+        if coords.shape[0] == feat.shape[0] and coords.shape[-1] >= 2:
+            coords = coords[:, :2].float()
+            coords = coords - coords.min(dim=0, keepdim=True).values
+            scale = coords.max(dim=0, keepdim=True).values.clamp_min(1.0)
+            coords = coords / scale
+            feat = torch.cat([feat.float(), coords], dim=-1)
+        return feat
 
     def balanced_sampler(self) -> WeightedRandomSampler:
         counts: dict[int, int] = {}
@@ -130,6 +177,203 @@ class PrototypeHead(nn.Module):
         return features @ prototypes.t() / self.temperature
 
 
+def initialize_weights(module: nn.Module) -> None:
+    for m in module.modules():
+        if isinstance(m, nn.Linear):
+            nn.init.xavier_normal_(m.weight)
+            if m.bias is not None:
+                m.bias.data.zero_()
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+
+
+class HybridTopKMIL(nn.Module):
+    """Hybrid bag-level attention and top-k instance evidence aggregation."""
+
+    def __init__(
+        self,
+        *,
+        in_dim: int,
+        num_classes: int,
+        hidden_dim: int = 512,
+        attn_dim: int = 128,
+        dropout: float = 0.0,
+        topk: int = 8,
+        instance_alpha: float = 0.5,
+    ):
+        super().__init__()
+        self.topk = topk
+        self.instance_alpha = instance_alpha
+        layers: list[nn.Module] = [nn.Linear(in_dim, hidden_dim), nn.ReLU()]
+        if dropout:
+            layers.append(nn.Dropout(dropout))
+        self.feature = nn.Sequential(*layers)
+        self.attention = nn.Sequential(nn.Linear(hidden_dim, attn_dim), nn.Tanh(), nn.Linear(attn_dim, 1))
+        self.bag_classifier = nn.Linear(hidden_dim, num_classes)
+        self.instance_classifier = nn.Linear(hidden_dim, num_classes)
+        self.apply(initialize_weights)
+
+    def forward(self, x, return_WSI_attn: bool = False, return_WSI_feature: bool = False):
+        forward_return = {}
+        feature = self.feature(x).squeeze(0)
+        raw_attention = self.attention(feature)
+        attention = F.softmax(raw_attention.transpose(0, 1), dim=-1)
+        bag_feature = torch.mm(attention, feature)
+        bag_logits = self.bag_classifier(bag_feature)
+        instance_logits = self.instance_classifier(feature)
+        k = min(max(1, self.topk), instance_logits.shape[0])
+        topk_logits = instance_logits.topk(k=k, dim=0).values.mean(dim=0, keepdim=True)
+        logits = bag_logits + self.instance_alpha * topk_logits
+        forward_return["logits"] = logits
+        if return_WSI_feature:
+            forward_return["WSI_feature"] = bag_feature
+        if return_WSI_attn:
+            forward_return["WSI_attn"] = raw_attention
+        return forward_return
+
+
+class PrototypeRoutedMIL(nn.Module):
+    """Learned prototype routes summarize complementary instance subsets."""
+
+    def __init__(
+        self,
+        *,
+        in_dim: int,
+        num_classes: int,
+        hidden_dim: int = 512,
+        num_routes: int = 4,
+        temperature: float = 0.2,
+        dropout: float = 0.0,
+        confidence_alpha: float = 0.0,
+    ):
+        super().__init__()
+        self.num_classes = num_classes
+        self.confidence_alpha = confidence_alpha
+        layers: list[nn.Module] = [nn.Linear(in_dim, hidden_dim), nn.ReLU()]
+        if dropout:
+            layers.append(nn.Dropout(dropout))
+        self.feature = nn.Sequential(*layers)
+        self.prototypes = nn.Parameter(torch.randn(num_routes, hidden_dim) * 0.02)
+        self.temperature = temperature
+        self.instance_classifier = nn.Linear(hidden_dim, num_classes) if confidence_alpha > 0 else None
+        self.classifier = nn.Linear(num_routes * hidden_dim, num_classes)
+        self.apply(initialize_weights)
+
+    def forward(self, x, return_WSI_attn: bool = False, return_WSI_feature: bool = False):
+        forward_return = {}
+        feature = self.feature(x).squeeze(0)
+        norm_feature = F.normalize(feature, dim=1)
+        norm_proto = F.normalize(self.prototypes, dim=1)
+        route_logits = norm_feature @ norm_proto.t() / self.temperature
+        if self.instance_classifier is not None:
+            instance_logits = self.instance_classifier(feature)
+            instance_prob = F.softmax(instance_logits, dim=1)
+            entropy = -(instance_prob * instance_prob.clamp_min(1e-8).log()).sum(dim=1, keepdim=True)
+            confidence = 1.0 - entropy / math.log(self.num_classes)
+            route_logits = route_logits + self.confidence_alpha * confidence
+        route_attention = F.softmax(route_logits.transpose(0, 1), dim=-1)
+        slots = torch.mm(route_attention, feature)
+        logits = self.classifier(slots.reshape(1, -1))
+        forward_return["logits"] = logits
+        if return_WSI_feature:
+            forward_return["WSI_feature"] = slots.mean(dim=0, keepdim=True)
+        if return_WSI_attn:
+            forward_return["WSI_attn"] = route_logits
+        return forward_return
+
+
+class UncertaintyWeightedMIL(nn.Module):
+    """Instance confidence modulates attention before bag aggregation."""
+
+    def __init__(
+        self,
+        *,
+        in_dim: int,
+        num_classes: int,
+        hidden_dim: int = 512,
+        attn_dim: int = 128,
+        dropout: float = 0.0,
+        confidence_alpha: float = 1.0,
+    ):
+        super().__init__()
+        self.confidence_alpha = confidence_alpha
+        self.num_classes = num_classes
+        layers: list[nn.Module] = [nn.Linear(in_dim, hidden_dim), nn.ReLU()]
+        if dropout:
+            layers.append(nn.Dropout(dropout))
+        self.feature = nn.Sequential(*layers)
+        self.attention = nn.Sequential(nn.Linear(hidden_dim, attn_dim), nn.Tanh(), nn.Linear(attn_dim, 1))
+        self.instance_classifier = nn.Linear(hidden_dim, num_classes)
+        self.classifier = nn.Linear(hidden_dim, num_classes)
+        self.apply(initialize_weights)
+
+    def forward(self, x, return_WSI_attn: bool = False, return_WSI_feature: bool = False):
+        forward_return = {}
+        feature = self.feature(x).squeeze(0)
+        instance_logits = self.instance_classifier(feature)
+        instance_prob = F.softmax(instance_logits, dim=1)
+        entropy = -(instance_prob * instance_prob.clamp_min(1e-8).log()).sum(dim=1, keepdim=True)
+        confidence = 1.0 - entropy / math.log(self.num_classes)
+        raw_attention = self.attention(feature) + self.confidence_alpha * confidence
+        attention = F.softmax(raw_attention.transpose(0, 1), dim=-1)
+        bag_feature = torch.mm(attention, feature)
+        logits = self.classifier(bag_feature)
+        forward_return["logits"] = logits
+        if return_WSI_feature:
+            forward_return["WSI_feature"] = bag_feature
+        if return_WSI_attn:
+            forward_return["WSI_attn"] = raw_attention
+        return forward_return
+
+
+class ClassWiseEvidenceMIL(nn.Module):
+    """Class-specific attention heads produce per-class bag evidence."""
+
+    def __init__(
+        self,
+        *,
+        in_dim: int,
+        num_classes: int,
+        hidden_dim: int = 512,
+        attn_dim: int = 128,
+        dropout: float = 0.0,
+        topk: int | None = None,
+        instance_alpha: float = 0.5,
+    ):
+        super().__init__()
+        self.topk = topk
+        self.instance_alpha = instance_alpha
+        layers: list[nn.Module] = [nn.Linear(in_dim, hidden_dim), nn.ReLU()]
+        if dropout:
+            layers.append(nn.Dropout(dropout))
+        self.feature = nn.Sequential(*layers)
+        self.attention = nn.Sequential(nn.Linear(hidden_dim, attn_dim), nn.Tanh(), nn.Linear(attn_dim, num_classes))
+        self.class_vectors = nn.Parameter(torch.randn(num_classes, hidden_dim) * 0.02)
+        self.class_bias = nn.Parameter(torch.zeros(num_classes))
+        self.instance_classifier = nn.Linear(hidden_dim, num_classes) if topk is not None else None
+        self.apply(initialize_weights)
+
+    def forward(self, x, return_WSI_attn: bool = False, return_WSI_feature: bool = False):
+        forward_return = {}
+        feature = self.feature(x).squeeze(0)
+        raw_attention = self.attention(feature)
+        attention = F.softmax(raw_attention.transpose(0, 1), dim=-1)
+        class_features = torch.mm(attention, feature)
+        logits = (class_features * self.class_vectors).sum(dim=1, keepdim=False).view(1, -1) + self.class_bias.view(1, -1)
+        if self.instance_classifier is not None:
+            instance_logits = self.instance_classifier(feature)
+            k = min(max(1, int(self.topk or 1)), instance_logits.shape[0])
+            topk_logits = instance_logits.topk(k=k, dim=0).values.mean(dim=0, keepdim=True)
+            logits = logits + self.instance_alpha * topk_logits
+        forward_return["logits"] = logits
+        if return_WSI_feature:
+            forward_return["WSI_feature"] = class_features.mean(dim=0, keepdim=True)
+        if return_WSI_attn:
+            forward_return["WSI_attn"] = raw_attention
+        return forward_return
+
+
 @dataclass
 class TrainConfig:
     dataset_csv: Path
@@ -149,6 +393,14 @@ class TrainConfig:
     prototype_lambda: float
     prototype_temperature: float
     use_coords: bool
+    topk: int
+    instance_alpha: float
+    num_routes: int
+    route_temperature: float
+    confidence_alpha: float
+    max_patches_per_bag: int | None
+    feature_cache_dir: Path | None
+    skip_predictions: bool
 
 
 def set_seed(seed: int) -> None:
@@ -172,6 +424,43 @@ def get_abmil(cfg: TrainConfig) -> nn.Module:
         act=nn.ReLU(),
         in_dim=cfg.in_dim,
     )
+
+
+def get_model(cfg: TrainConfig) -> nn.Module:
+    upper = cfg.variant.upper()
+    if "CLASSWISE" in upper:
+        return ClassWiseEvidenceMIL(
+            in_dim=cfg.in_dim,
+            num_classes=cfg.num_classes,
+            dropout=cfg.dropout,
+            topk=cfg.topk if "TOPK" in upper else None,
+            instance_alpha=cfg.instance_alpha,
+        )
+    if "ROUTE" in upper:
+        return PrototypeRoutedMIL(
+            in_dim=cfg.in_dim,
+            num_classes=cfg.num_classes,
+            dropout=cfg.dropout,
+            num_routes=cfg.num_routes,
+            temperature=cfg.route_temperature,
+            confidence_alpha=cfg.confidence_alpha if "UNCERT" in upper else 0.0,
+        )
+    if "UNCERT" in upper:
+        return UncertaintyWeightedMIL(
+            in_dim=cfg.in_dim,
+            num_classes=cfg.num_classes,
+            dropout=cfg.dropout,
+            confidence_alpha=cfg.confidence_alpha,
+        )
+    if "HYBRID" in upper or "TOPK" in upper:
+        return HybridTopKMIL(
+            in_dim=cfg.in_dim,
+            num_classes=cfg.num_classes,
+            dropout=cfg.dropout,
+            topk=cfg.topk,
+            instance_alpha=cfg.instance_alpha,
+        )
+    return get_abmil(cfg)
 
 
 def cal_scores(probs: list[np.ndarray], labels: list[int], num_classes: int) -> dict[str, Any]:
@@ -280,9 +569,30 @@ def train(cfg: TrainConfig) -> Path:
     set_seed(cfg.seed)
     device = torch.device(f"cuda:{cfg.device}" if torch.cuda.is_available() else "cpu")
 
-    train_set = WideWSIDataset(cfg.dataset_csv, "train", use_coords=cfg.use_coords)
-    val_set = WideWSIDataset(cfg.dataset_csv, "val", use_coords=cfg.use_coords)
-    test_set = WideWSIDataset(cfg.dataset_csv, "test", use_coords=cfg.use_coords)
+    train_set = WideWSIDataset(
+        cfg.dataset_csv,
+        "train",
+        use_coords=cfg.use_coords,
+        max_patches_per_bag=cfg.max_patches_per_bag,
+        seed=cfg.seed,
+        cache_dir=cfg.feature_cache_dir,
+    )
+    val_set = WideWSIDataset(
+        cfg.dataset_csv,
+        "val",
+        use_coords=cfg.use_coords,
+        max_patches_per_bag=cfg.max_patches_per_bag,
+        seed=cfg.seed,
+        cache_dir=cfg.feature_cache_dir,
+    )
+    test_set = WideWSIDataset(
+        cfg.dataset_csv,
+        "test",
+        use_coords=cfg.use_coords,
+        max_patches_per_bag=cfg.max_patches_per_bag,
+        seed=cfg.seed,
+        cache_dir=cfg.feature_cache_dir,
+    )
     generator = torch.Generator()
     generator.manual_seed(cfg.seed)
     if cfg.balanced_sampler:
@@ -292,7 +602,7 @@ def train(cfg: TrainConfig) -> Path:
     val_loader = DataLoader(val_set, batch_size=1, shuffle=False)
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False)
 
-    model = get_abmil(cfg).to(device)
+    model = get_model(cfg).to(device)
     use_focal = "FOCAL" in cfg.variant.upper()
     use_proto = "PROTO" in cfg.variant.upper()
     criterion: nn.Module
@@ -369,7 +679,7 @@ def train(cfg: TrainConfig) -> Path:
             writer = csv.DictWriter(f, fieldnames=list(best_row.keys()))
             writer.writeheader()
             writer.writerow(best_row)
-    if best_model_state is not None:
+    if best_model_state is not None and not cfg.skip_predictions:
         model.load_state_dict(best_model_state)
         model.to(device)
         for split, dataset in (("train", train_set), ("val", val_set), ("test", test_set)):
@@ -395,6 +705,14 @@ def train(cfg: TrainConfig) -> Path:
         "prototype_lambda": cfg.prototype_lambda,
         "prototype_temperature": cfg.prototype_temperature,
         "use_coords": cfg.use_coords,
+        "topk": cfg.topk,
+        "instance_alpha": cfg.instance_alpha,
+        "num_routes": cfg.num_routes,
+        "route_temperature": cfg.route_temperature,
+        "confidence_alpha": cfg.confidence_alpha,
+        "max_patches_per_bag": cfg.max_patches_per_bag,
+        "feature_cache_dir": str(cfg.feature_cache_dir) if cfg.feature_cache_dir else None,
+        "skip_predictions": cfg.skip_predictions,
     }
     (cfg.output_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     return best_path
@@ -411,7 +729,8 @@ def parse_args() -> TrainConfig:
         help=(
             "Variant name. Names containing FOCAL use class-balanced focal loss; "
             "names containing PROTO use prototype regularization. Suffixes are kept "
-            "for experiment tracking, e.g. AB_MIL_FOCAL_PROTO_LR1E4_PL01."
+            "for experiment tracking. Names containing HYBRID/TOPK, ROUTE, or UNCERT "
+            "use custom method modules."
         ),
     )
     parser.add_argument("--num-classes", type=int, required=True)
@@ -427,6 +746,14 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--prototype-lambda", type=float, default=0.2)
     parser.add_argument("--prototype-temperature", type=float, default=0.2)
     parser.add_argument("--use-coords", action="store_true")
+    parser.add_argument("--topk", type=int, default=8)
+    parser.add_argument("--instance-alpha", type=float, default=0.5)
+    parser.add_argument("--num-routes", type=int, default=4)
+    parser.add_argument("--route-temperature", type=float, default=0.2)
+    parser.add_argument("--confidence-alpha", type=float, default=1.0)
+    parser.add_argument("--max-patches-per-bag", type=int, default=0)
+    parser.add_argument("--feature-cache-dir", default=None)
+    parser.add_argument("--skip-predictions", action="store_true")
     args = parser.parse_args()
     return TrainConfig(
         dataset_csv=Path(args.dataset_csv),
@@ -446,6 +773,14 @@ def parse_args() -> TrainConfig:
         prototype_lambda=args.prototype_lambda,
         prototype_temperature=args.prototype_temperature,
         use_coords=args.use_coords,
+        topk=args.topk,
+        instance_alpha=args.instance_alpha,
+        num_routes=args.num_routes,
+        route_temperature=args.route_temperature,
+        confidence_alpha=args.confidence_alpha,
+        max_patches_per_bag=args.max_patches_per_bag if args.max_patches_per_bag > 0 else None,
+        feature_cache_dir=Path(args.feature_cache_dir) if args.feature_cache_dir else None,
+        skip_predictions=args.skip_predictions,
     )
 
 

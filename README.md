@@ -344,6 +344,24 @@ split: cross-entropy baseline, focal loss only, prototype head only, and the
 full focal-plus-prototype method. It writes `ablation_cv_report.md` and a
 checkpoint for resume.
 
+## Literature and Proposal Search
+
+Before starting a method-innovation loop, run one literature/proposal search.
+If the user provides papers or proposal drafts, pass them as JSON/CSV/TSV and
+use `--offline` to avoid online search:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli literature-search `
+  --config configs\gastric_ki67_binary50.yaml `
+  --user-sources papers.json `
+  --offline
+```
+
+If no sources are provided, omit `--user-sources`; the command queries online
+paper indexes and writes `literature_search/literature_report.md` plus
+`literature_search/literature_proposals.json`. `propose-nodes` can read this
+JSON as method proposal seeds when `innovation.method_proposals` is absent.
+
 ## Autonomous Window
 
 `run-autonomous-window` runs one QWBE-lite tree node per round until the approved
@@ -351,15 +369,34 @@ wall-clock budget, maximum run count, or target metric is reached. It records an
 `autonomous_journal.jsonl` and `autonomous_summary.md`, uses the confirmed split
 plan, respects per-run timeout if provided, and relies on failure policy for
 safe retries. When pending nodes are exhausted, it can call the proposal
-generator to add new candidate nodes from the current evidence.
+generator to add new candidate nodes from the current evidence. If a support-only
+node such as local tuning reaches the target, the window records that event but
+continues method-track exploration until a method node reaches the target or the
+approved budget is exhausted.
 
 ## Proposal Generator
 
 `propose-nodes` reads the current experiment tree, checkpoint, and
 `baseline_plan.json`, then adds auditable `ExperimentNode` proposals. The current
 deterministic generator proposes compatible baseline-family expansions and local
-refinements of the best completed recipe. Use `--no-apply` to preview without
-modifying the tree.
+refinements of the best completed recipe. It also reads optional
+`innovation.method_proposals` entries from the config for manuscript-worthy
+method proposals with explicit `core_modules`, `support_tags`, and
+`ablation_plan`. Use `--no-apply` to preview without modifying the tree.
+
+```yaml
+innovation:
+  method_proposals:
+    - name: focal_proto_abmil
+      model_name: AB_MIL
+      core_modules:
+        - class-balanced focal objective
+        - prototype auxiliary head
+      ablation_plan:
+        - remove focal objective
+        - remove prototype auxiliary head
+      config_overrides: {}
+```
 
 ## Manuscript Experiment Skill
 

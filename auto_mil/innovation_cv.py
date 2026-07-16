@@ -11,6 +11,7 @@ from typing import Any
 
 from .config import AutoMilConfig
 from .data import prepare_dataset_kfold
+from .innovation_policy import InnovationPolicy, classify_variant, render_policy_note
 from .log_analyzer import LogDiagnosis, diagnose_log_file, diagnosis_from_payload, write_diagnosis_json
 from .split_executor import materialize_kfold_from_split_plan, select_split_plan
 from .state import ExperimentCheckpoint, ResearchJournal, json_ready
@@ -28,6 +29,7 @@ class CustomRunResult:
     metrics: dict[str, Any]
     error: str | None = None
     diagnosis: LogDiagnosis | None = None
+    innovation_policy: InnovationPolicy | None = None
 
 
 def custom_result_to_payload(result: CustomRunResult) -> dict[str, Any]:
@@ -43,6 +45,7 @@ def custom_result_to_payload(result: CustomRunResult) -> dict[str, Any]:
             "metrics": result.metrics,
             "error": result.error,
             "diagnosis": result.diagnosis,
+            "innovation_policy": result.innovation_policy,
         }
     )
 
@@ -59,7 +62,19 @@ def custom_result_from_payload(payload: dict[str, Any]) -> CustomRunResult:
         metrics=dict(payload.get("metrics", {})),
         error=payload.get("error"),
         diagnosis=diagnosis_from_payload(payload.get("diagnosis")),
+        innovation_policy=_policy_from_payload(payload.get("innovation_policy"), str(payload["variant"])),
     )
+
+
+def _policy_from_payload(payload: Any, variant: str) -> InnovationPolicy:
+    if isinstance(payload, dict):
+        return InnovationPolicy(
+            track=str(payload.get("track", "baseline")),
+            core_modules=[str(x) for x in payload.get("core_modules", [])],
+            support_tags=[str(x) for x in payload.get("support_tags", [])],
+            rationale=str(payload.get("rationale", "")),
+        )
+    return classify_variant(variant)
 
 
 def _read_best_metrics(log_dir: Path) -> dict[str, Any]:
@@ -100,6 +115,12 @@ def run_custom_variant(
     focal_beta: float,
     prototype_lambda: float,
     prototype_temperature: float,
+    topk: int,
+    instance_alpha: float,
+    num_routes: int,
+    route_temperature: float,
+    confidence_alpha: float,
+    max_patches_per_bag: int | None,
     use_coords: bool,
     dry_run: bool,
 ) -> CustomRunResult:
@@ -143,7 +164,22 @@ def run_custom_variant(
         str(focal_beta),
         "--prototype-temperature",
         str(prototype_temperature),
+        "--topk",
+        str(topk),
+        "--instance-alpha",
+        str(instance_alpha),
+        "--num-routes",
+        str(num_routes),
+        "--route-temperature",
+        str(route_temperature),
+        "--confidence-alpha",
+        str(confidence_alpha),
+        "--skip-predictions",
+        "--feature-cache-dir",
+        str(output_dir / "feature_cache"),
     ]
+    if max_patches_per_bag is not None:
+        command.extend(["--max-patches-per-bag", str(max_patches_per_bag)])
     if balanced_sampler:
         command.append("--balanced-sampler")
     if use_coords:
@@ -151,7 +187,7 @@ def run_custom_variant(
 
     if dry_run:
         stdout_path.write_text(json.dumps({"command": command}, indent=2), encoding="utf-8")
-        return CustomRunResult(run_id, variant, fold, "dry_run", command, stdout_path, log_dir, {})
+        return CustomRunResult(run_id, variant, fold, "dry_run", command, stdout_path, log_dir, {}, innovation_policy=classify_variant(variant))
 
     with stdout_path.open("w", encoding="utf-8") as stdout:
         proc = subprocess.run(
@@ -179,6 +215,7 @@ def run_custom_variant(
         metrics=_read_best_metrics(log_dir),
         error=error,
         diagnosis=diagnosis,
+        innovation_policy=classify_variant(variant),
     )
 
 
@@ -210,6 +247,11 @@ def _variant_hparams(
     parsed_gamma = _token_number(upper, "FG")
     parsed_lambda = _token_number(upper, "PL")
     parsed_temperature = _token_number(upper, "PT")
+    parsed_topk = _token_number(upper, "TK")
+    parsed_instance_alpha = _token_number(upper, "IA")
+    parsed_num_routes = _token_number(upper, "NR")
+    parsed_route_temperature = _token_number(upper, "RT")
+    parsed_confidence_alpha = _token_number(upper, "UA")
     return {
         "lr": parsed_lr if parsed_lr is not None else lr,
         "dropout": parsed_dropout if parsed_dropout is not None else dropout,
@@ -218,6 +260,11 @@ def _variant_hparams(
         "focal_beta": focal_beta,
         "prototype_lambda": parsed_lambda if parsed_lambda is not None else prototype_lambda,
         "prototype_temperature": parsed_temperature if parsed_temperature is not None else prototype_temperature,
+        "topk": int(parsed_topk) if parsed_topk is not None else 8,
+        "instance_alpha": parsed_instance_alpha if parsed_instance_alpha is not None else 0.5,
+        "num_routes": int(parsed_num_routes) if parsed_num_routes is not None else 4,
+        "route_temperature": parsed_route_temperature if parsed_route_temperature is not None else 0.2,
+        "confidence_alpha": parsed_confidence_alpha if parsed_confidence_alpha is not None else 1.0,
         "use_coords": "COORD" in upper,
     }
 
@@ -230,6 +277,8 @@ def summarize(results: list[CustomRunResult]) -> dict[str, dict[str, Any]]:
             "n_completed": sum(1 for r in rows if r.status == "completed"),
             "n_total": len(rows),
         }
+        policy = classify_variant(variant)
+        summary.update(policy.to_dict())
         for metric in ["test_macro_auc", "test_bacc", "test_macro_f1", "test_acc", "val_macro_auc"]:
             values = []
             for row in rows:
@@ -256,8 +305,8 @@ def write_report(output_dir: Path, results: list[CustomRunResult], summary: dict
         "",
         "## Mean Metrics",
         "",
-        "| Rank | Variant | Completed | Test macro AUC | Test BACC | Test macro F1 | Test ACC | Val macro AUC |",
-        "|---:|---|---:|---:|---:|---:|---:|---:|",
+        "| Rank | Variant | Track | Core modules | Support tags | Completed | Test macro AUC | Test BACC | Test macro F1 | Test ACC | Val macro AUC |",
+        "|---:|---|---|---|---|---:|---:|---:|---:|---:|---:|",
     ]
     for rank, (variant, row) in enumerate(ranked, start=1):
         def fmt(name: str) -> str:
@@ -267,12 +316,25 @@ def write_report(output_dir: Path, results: list[CustomRunResult], summary: dict
                 return ""
             return f"{m:.4f} +/- {s:.4f}"
 
+        core = ", ".join(row.get("core_modules", []))
+        support = ", ".join(row.get("support_tags", []))
         lines.append(
-            f"| {rank} | {variant} | {row.get('n_completed', 0)}/{row.get('n_total', 0)} | "
+            f"| {rank} | {variant} | {row.get('track', '')} | {core} | {support} | {row.get('n_completed', 0)}/{row.get('n_total', 0)} | "
             f"{fmt('test_macro_auc')} | {fmt('test_bacc')} | {fmt('test_macro_f1')} | "
             f"{fmt('test_acc')} | {fmt('val_macro_auc')} |"
         )
-    lines.extend(["", "## Per-Fold Runs", ""])
+    lines.extend(
+        [
+            "",
+            "## Integrity Note",
+            "",
+            "Method-track rows may support manuscript method claims if their components are ablated. "
+            "Support-track rows such as ensembles or hyperparameter-only changes should be reported as auxiliary evidence.",
+            "",
+            "## Per-Fold Runs",
+            "",
+        ]
+    )
     lines.append("| Run | Variant | Fold | Status | Diagnosis | Test macro AUC | Metrics |")
     lines.append("|---|---|---:|---|---|---:|---|")
     for result in results:
@@ -365,7 +427,17 @@ def run_innovation_cv(
                     {"fold": fold_idx, "variant": variant, "run_id": run_id, "status": result.status},
                 )
                 continue
-            journal.write("innovation_run_start", {"fold": fold_idx, "variant": variant, "dataset_csv": str(dataset_csv)})
+            policy = classify_variant(variant)
+            journal.write(
+                "innovation_run_start",
+                {
+                    "fold": fold_idx,
+                    "variant": variant,
+                    "dataset_csv": str(dataset_csv),
+                    "innovation_policy": policy.to_dict(),
+                    "policy_note": render_policy_note(policy),
+                },
+            )
             hparams = _variant_hparams(
                 variant,
                 lr=lr,
@@ -392,6 +464,12 @@ def run_innovation_cv(
                 focal_beta=float(hparams["focal_beta"]),
                 prototype_lambda=float(hparams["prototype_lambda"]),
                 prototype_temperature=float(hparams["prototype_temperature"]),
+                topk=int(hparams["topk"]),
+                instance_alpha=float(hparams["instance_alpha"]),
+                num_routes=int(hparams["num_routes"]),
+                route_temperature=float(hparams["route_temperature"]),
+                confidence_alpha=float(hparams["confidence_alpha"]),
+                max_patches_per_bag=max_patches_per_bag,
                 use_coords=bool(hparams["use_coords"]),
                 dry_run=dry_run,
             )

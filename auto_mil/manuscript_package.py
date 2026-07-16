@@ -285,6 +285,8 @@ def _render_polish_prompt(
             "",
             "- Preserve all metric values, model names, split names, counts, and file references exactly.",
             "- Do not add state-of-the-art, clinical utility, robustness, or external validation claims unless explicitly supported.",
+            "- Do not convert support-track gains such as ensembling, seed search, threshold tuning, longer training, or hyperparameter-only changes into the main method contribution.",
+            "- Keep method-track claims tied to named core modules and ablation evidence.",
             "- Convert missing information into clear TODO markers.",
             "- Keep Methods factual and reproducible.",
             "- Keep Results ordered around the primary metric, statistical evidence, figures, ablation, and errors.",

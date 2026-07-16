@@ -31,6 +31,9 @@ When using this repo, prefer generated evidence artifacts:
 - `prediction_report.md` and `case_predictions.csv` for case-level predictions
 - `figure_report.md`, `per_class_metrics.csv`, and `error_cases.csv` for
   ROC/confusion matrix/calibration/error analysis claims
+- `innovation_cv_report.md` and `innovation_cv_summary.json` for method/support
+  track labels, core method modules, and support-only improvements
+- `ablation_cv_report.md` for component-wise contribution evidence
 
 Generate the first evidence-indexed draft with:
 
@@ -63,6 +66,14 @@ Avoid unsupported claims:
 - "state-of-the-art" unless compared fairly to strong published baselines
 - "clinically deployable" without external validation and calibration
 - "robust" without center/stain/seed stress tests
+- "new algorithm" for ensemble, seed search, threshold tuning, longer training,
+  caching, or hyperparameter-only changes
+- Method subsection claims without named method-track components and ablation
+  evidence
+
+Keep support-track gains in implementation details, sensitivity analysis,
+robustness checks, or auxiliary upper-bound tables. Reserve Method subsections
+for method-track components with a mechanism, implementation, and ablation.
 
 ## Table Template
 

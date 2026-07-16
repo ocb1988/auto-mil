@@ -40,6 +40,7 @@ class AutonomousRound:
     best_metric_value: float | None
     best_run_id: str | None
     best_model: str | None
+    best_track: str | None = None
     stop_reason: str | None = None
 
 
@@ -55,6 +56,7 @@ class AutonomousSummary:
     best_metric_value: float | None
     best_run_id: str | None
     best_model: str | None
+    best_track: str | None = None
     tree_json: str | None = None
     warnings: list[str] = field(default_factory=list)
 
@@ -65,11 +67,29 @@ def _load_checkpoint(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _best_metric(checkpoint_path: Path, metric: str) -> tuple[float | None, str | None, str | None]:
+def _node_track_index(tree_path: Path) -> dict[str, str]:
+    if not tree_path.exists():
+        return {}
+    tree = ExperimentTree(tree_path)
+    index = {}
+    for node in tree.nodes.values():
+        index[node.recipe.recipe_id] = node.innovation_track
+        if node.result_run_id:
+            index[node.result_run_id] = node.innovation_track
+    return index
+
+
+def _best_metric(
+    checkpoint_path: Path,
+    metric: str,
+    tree_path: Path | None = None,
+) -> tuple[float | None, str | None, str | None, str | None]:
     checkpoint = _load_checkpoint(checkpoint_path)
+    track_index = _node_track_index(tree_path) if tree_path is not None else {}
     best_value: float | None = None
     best_run_id: str | None = None
     best_model: str | None = None
+    best_track: str | None = None
     for run_id, record in checkpoint.get("runs", {}).items():
         if record.get("status") != "completed":
             continue
@@ -86,7 +106,8 @@ def _best_metric(checkpoint_path: Path, metric: str) -> tuple[float | None, str 
             best_run_id = str(run_id)
             recipe = payload.get("recipe", {})
             best_model = str(recipe.get("model_name", "unknown"))
-    return best_value, best_run_id, best_model
+            best_track = track_index.get(str(run_id), track_index.get(str(recipe.get("recipe_id", "")), "unknown"))
+    return best_value, best_run_id, best_model, best_track
 
 
 def _tree_pending_count(tree_path: Path) -> int:
@@ -119,6 +140,7 @@ def _render_markdown(summary: AutonomousSummary) -> str:
         f"- Stop reason: `{summary.stop_reason}`",
         f"- Best run: `{summary.best_run_id}`",
         f"- Best model: `{summary.best_model}`",
+        f"- Best track: `{summary.best_track}`",
         f"- Best metric value: `{summary.best_metric_value}`",
         f"- Tree: `{summary.tree_json}`",
         "",
@@ -130,14 +152,14 @@ def _render_markdown(summary: AutonomousSummary) -> str:
         "",
         "## Rounds",
         "",
-        "| Round | Started | Finished | Best | Best run | Stop reason | Report |",
-        "|---:|---|---|---:|---|---|---|",
+        "| Round | Started | Finished | Best | Best run | Best track | Stop reason | Report |",
+        "|---:|---|---|---:|---|---|---|---|",
     ]
     for item in summary.rounds:
         value = "" if item.best_metric_value is None else f"{item.best_metric_value:.4f}"
         lines.append(
             f"| {item.round_index} | {item.started_at} | {item.finished_at} | {value} | "
-            f"`{item.best_run_id or ''}` | {item.stop_reason or ''} | `{item.report_path}` |"
+            f"`{item.best_run_id or ''}` | {item.best_track or ''} | {item.stop_reason or ''} | `{item.report_path}` |"
         )
     if summary.warnings:
         lines.extend(["", "## Warnings", ""])
@@ -165,7 +187,7 @@ def run_autonomous_window(cfg: AutoMilConfig, contract: AutonomousContract) -> P
             stop_reason = "time_budget_exhausted"
             break
         round_started = now_iso()
-        best_before, _run_before, _model_before = _best_metric(checkpoint_path, contract.target_metric)
+        best_before, _run_before, _model_before, _track_before = _best_metric(checkpoint_path, contract.target_metric, tree_path)
         pending_before = _tree_pending_count(tree_path)
         journal.write(
             "autonomous_round_start",
@@ -210,15 +232,19 @@ def run_autonomous_window(cfg: AutoMilConfig, contract: AutonomousContract) -> P
             resume=contract.resume,
         )
         run_count_after = _checkpoint_run_count(checkpoint_path)
-        best_value, best_run_id, best_model = _best_metric(checkpoint_path, contract.target_metric)
+        best_value, best_run_id, best_model, best_track = _best_metric(checkpoint_path, contract.target_metric, tree_path)
         round_stop = None
         pending_after = _tree_pending_count(tree_path)
         if run_count_after == run_count_before and pending_after == 0 and not contract.enable_proposals:
             round_stop = "no_pending_nodes"
             stop_reason = "no_pending_nodes"
-        if contract.target_value is not None and best_value is not None and best_value >= contract.target_value:
-            round_stop = "target_reached"
-            stop_reason = "target_reached"
+        if round_stop is None and contract.target_value is not None and best_value is not None and best_value >= contract.target_value:
+            if best_track == "support":
+                round_stop = "support_target_reached_continue_method"
+                stop_reason = "support_target_reached_budget_exhausted"
+            else:
+                round_stop = "target_reached"
+                stop_reason = "target_reached"
         rounds.append(
             AutonomousRound(
                 round_index=round_index,
@@ -228,6 +254,7 @@ def run_autonomous_window(cfg: AutoMilConfig, contract: AutonomousContract) -> P
                 best_metric_value=best_value,
                 best_run_id=best_run_id,
                 best_model=best_model,
+                best_track=best_track,
                 stop_reason=round_stop,
             )
         )
@@ -239,17 +266,18 @@ def run_autonomous_window(cfg: AutoMilConfig, contract: AutonomousContract) -> P
                 "best_value": best_value,
                 "best_run_id": best_run_id,
                 "best_model": best_model,
+                "best_track": best_track,
                 "stop_reason": round_stop,
             },
         )
-        if round_stop:
+        if round_stop and round_stop != "support_target_reached_continue_method":
             break
     else:
         stop_reason = "max_runs_reached"
 
     if contract.dry_run:
         warnings.append("This was a dry run; no training metrics are expected.")
-    best_value, best_run_id, best_model = _best_metric(checkpoint_path, contract.target_metric)
+    best_value, best_run_id, best_model, best_track = _best_metric(checkpoint_path, contract.target_metric, tree_path)
     summary = AutonomousSummary(
         config=str(cfg.path),
         output_dir=str(output_dir),
@@ -261,6 +289,7 @@ def run_autonomous_window(cfg: AutoMilConfig, contract: AutonomousContract) -> P
         best_metric_value=best_value,
         best_run_id=best_run_id,
         best_model=best_model,
+        best_track=best_track,
         tree_json=str(tree_path) if tree_path.exists() else None,
         warnings=warnings,
     )

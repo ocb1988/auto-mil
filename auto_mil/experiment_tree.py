@@ -9,6 +9,7 @@ from typing import Any
 from .config import AutoMilConfig
 from .data import prepare_dataset
 from .failure_policy import action_to_payload, decide_failure_action, make_retry_recipe
+from .innovation_policy import classify_recipe_stage
 from .mil_baseline import Recipe, RunResult, run_recipe, run_result_from_payload, run_result_to_payload
 from .split_executor import materialize_holdout_from_split_plan, select_split_plan
 from .state import ExperimentCheckpoint, ResearchJournal, json_ready, now_iso
@@ -26,6 +27,10 @@ class ExperimentNode:
     score: float | None = None
     visits: int = 0
     result_run_id: str | None = None
+    innovation_track: str = "baseline"
+    core_modules: list[str] = field(default_factory=list)
+    support_tags: list[str] = field(default_factory=list)
+    ablation_plan: list[str] = field(default_factory=list)
     children: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=now_iso)
     updated_at: str = field(default_factory=now_iso)
@@ -64,6 +69,10 @@ class ExperimentTree:
                 score=node.get("score"),
                 visits=int(node.get("visits", 0)),
                 result_run_id=node.get("result_run_id"),
+                innovation_track=str(node.get("innovation_track", "baseline")),
+                core_modules=list(node.get("core_modules", [])),
+                support_tags=list(node.get("support_tags", [])),
+                ablation_plan=list(node.get("ablation_plan", [])),
                 children=list(node.get("children", [])),
                 created_at=str(node.get("created_at", now_iso())),
                 updated_at=str(node.get("updated_at", now_iso())),
@@ -85,6 +94,11 @@ class ExperimentTree:
     def add_node(self, node: ExperimentNode) -> bool:
         if node.node_id in self.nodes:
             return False
+        if node.innovation_track == "baseline" and not node.core_modules and not node.support_tags:
+            policy = classify_recipe_stage(node.recipe.stage, node.recipe.notes, node.recipe.config_overrides)
+            node.innovation_track = policy.track
+            node.core_modules = list(policy.core_modules)
+            node.support_tags = list(policy.support_tags)
         self.nodes[node.node_id] = node
         if node.parent_id and node.parent_id in self.nodes:
             parent = self.nodes[node.parent_id]
@@ -162,6 +176,7 @@ def _seed_root_nodes(tree: ExperimentTree, cfg: AutoMilConfig, max_screen_models
                 depth=0,
                 prior=1.0,
                 rationale=f"Screen {model} as a root baseline.",
+                innovation_track="baseline",
             )
         )
 
@@ -204,6 +219,8 @@ def _expand_completed_roots(tree: ExperimentTree, cfg: AutoMilConfig, max_childr
                     f"Exploit {parent.recipe.model_name} after parent score "
                     f"{parent.score if parent.score is not None else 'NA'} with lr={lr}, dropout={dropout}."
                 ),
+                innovation_track="support",
+                support_tags=["learning-rate tuning", "dropout tuning", "sampler tuning"],
             )
             if tree.add_node(child):
                 added += 1
@@ -234,6 +251,10 @@ def _add_failure_retry_node(tree: ExperimentTree, failed_node: ExperimentNode, r
         depth=failed_node.depth + 1,
         prior=0.35,
         rationale=f"Failure policy retry after {action.category}: {action.summary}",
+        innovation_track=failed_node.innovation_track,
+        core_modules=list(failed_node.core_modules),
+        support_tags=list(failed_node.support_tags),
+        ablation_plan=list(failed_node.ablation_plan),
     )
     if tree.add_node(retry_node):
         return retry_node
@@ -254,12 +275,16 @@ def _write_tree_report(path: Path, cfg: AutoMilConfig, tree: ExperimentTree) -> 
         "| Rank | Node | Parent | Depth | Model | Status | Score | Prior | Visits | Rationale |",
         "|---:|---|---|---:|---|---|---:|---:|---:|---|",
     ]
+    lines[-2] = "| Rank | Node | Track | Core modules | Support tags | Parent | Depth | Model | Status | Score | Prior | Visits | Rationale |"
+    lines[-1] = "|---:|---|---|---|---|---|---:|---|---|---:|---:|---:|---|"
     for rank, node in enumerate(ranked, start=1):
         score = "" if node.score is None else f"{node.score:.4f}"
         parent = node.parent_id or ""
         rationale = node.rationale.replace("|", "/")
+        core = ", ".join(node.core_modules) if node.core_modules else ""
+        support = ", ".join(node.support_tags) if node.support_tags else ""
         lines.append(
-            f"| {rank} | `{node.node_id}` | `{parent}` | {node.depth} | {node.recipe.model_name} | "
+            f"| {rank} | `{node.node_id}` | {node.innovation_track} | {core} | {support} | `{parent}` | {node.depth} | {node.recipe.model_name} | "
             f"{node.status} | {score} | {node.prior:.2f} | {node.visits} | {rationale} |"
         )
     report_path = path / "experiment_tree.md"

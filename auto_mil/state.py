@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,8 @@ def now_iso() -> str:
 def json_ready(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
+    if is_dataclass(value) and not isinstance(value, type):
+        return json_ready(asdict(value))
     if isinstance(value, dict):
         return {str(k): json_ready(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):

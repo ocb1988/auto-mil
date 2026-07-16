@@ -15,6 +15,7 @@ from .experiment_tree import run_qwbe_lite
 from .failure_policy import action_to_payload, decide_failure_action
 from .figure_report import build_figure_report
 from .innovation_cv import run_innovation_cv
+from .literature_search import run_literature_search
 from .log_analyzer import diagnose_log_file, diagnosis_to_payload
 from .manuscript_package import available_manuscript_profiles, package_manuscript
 from .manuscript_writer import write_manuscript_draft
@@ -241,6 +242,21 @@ def cmd_propose_nodes(args: argparse.Namespace) -> None:
         apply=not args.no_apply,
     )
     print(f"proposal_report={report}")
+
+
+def cmd_literature_search(args: argparse.Namespace) -> None:
+    cfg = load_config(args.config)
+    report, proposals_json = run_literature_search(
+        cfg,
+        output_dir=Path(args.output_dir) if args.output_dir else None,
+        query=args.query,
+        max_papers=args.max_papers,
+        min_year=args.min_year,
+        user_sources=Path(args.user_sources) if args.user_sources else None,
+        offline=args.offline,
+    )
+    print(f"literature_report={report}")
+    print(f"literature_proposals_json={proposals_json}")
 
 
 def cmd_list_baselines(args: argparse.Namespace) -> None:
@@ -586,6 +602,16 @@ def build_parser() -> argparse.ArgumentParser:
     propose.add_argument("--max-proposals", type=int, default=6)
     propose.add_argument("--no-apply", action="store_true", help="Preview proposals without adding nodes")
     propose.set_defaults(func=cmd_propose_nodes)
+
+    literature = sub.add_parser("literature-search", help="Run pre-innovation literature/proposal search")
+    literature.add_argument("--config", required=True)
+    literature.add_argument("--output-dir", default=None, help="Directory for literature_report.md/proposals JSON")
+    literature.add_argument("--query", default=None, help="Search query; default is derived from config task/dataset")
+    literature.add_argument("--max-papers", type=int, default=None)
+    literature.add_argument("--min-year", type=int, default=None)
+    literature.add_argument("--user-sources", default=None, help="Optional user-provided JSON/CSV/TSV paper list")
+    literature.add_argument("--offline", action="store_true", help="Do not use online search; use only user/config sources")
+    literature.set_defaults(func=cmd_literature_search)
 
     baselines = sub.add_parser("list-baselines", help="List bundled or configured MIL_BASELINE models")
     baselines.add_argument("--mil-baseline-dir", default="bundled")
