@@ -136,16 +136,19 @@ def specs_to_payload(task: TaskSpec, dataset: DatasetSpec) -> dict[str, Any]:
 
 def describe_capabilities(task: TaskSpec, dataset: DatasetSpec) -> dict[str, Any]:
     supported_formats = {"h5", "pt"}
-    can_execute = task.kind == "classification" and dataset.feature.format.lower() in supported_formats
+    can_execute = task.kind in {"classification", "regression", "prognosis"} and dataset.feature.format.lower() in supported_formats
+    adapter = "mil_baseline" if task.kind == "classification" else "outcome_mil"
     return {
-        "can_prepare_mil_baseline": can_execute,
+        "can_execute": can_execute,
+        "execution_adapter": adapter if can_execute else None,
+        "can_prepare_mil_baseline": task.kind == "classification" and dataset.feature.format.lower() in supported_formats,
         "supported_now": {
-            "task_kind": "classification",
+            "task_kinds": ["classification", "regression", "prognosis"],
             "feature_format": sorted(supported_formats),
             "split_unit": "case/patient",
             "default_bag_level": "case",
         },
         "blocked_reason": None
         if can_execute
-        else "Current execution adapter supports classification with H5 or PT feature bags.",
+        else "Supported tasks are classification, regression, and prognosis/survival with H5 or PT feature bags.",
     }

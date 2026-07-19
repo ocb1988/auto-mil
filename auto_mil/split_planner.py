@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 
 from .data import _load_h5_classification_slide_table
+from .outcome_tasks import load_outcome_task_tables
 from .specs import DatasetSpec, TaskSpec, specs_to_payload
 from .state import json_ready, now_iso
 
@@ -123,8 +124,10 @@ def _stratified_cv_plan(profile: DatasetProfile, task: TaskSpec) -> SplitPlanOpt
         split_unit="case",
         n_splits=n_splits,
         rationale=(
-            "Use patient-level stratified cross validation when only one dataset/center is available. "
-            "This is the default manuscript-grade choice for a single cohort."
+            "Use patient-level outcome-stratified cross validation when only one dataset/center is available. "
+            "For regression, strata are outcome quantiles; for survival, event status is preserved where feasible."
+            if task.kind != "classification"
+            else "Use patient-level stratified cross validation when only one dataset/center is available. This is the default manuscript-grade choice for a single cohort."
         ),
         warnings=warnings,
     )
@@ -197,7 +200,11 @@ def _single_holdout_plan(case_df: pd.DataFrame, task: TaskSpec) -> SplitPlanOpti
     if abs(task.train_size + task.val_size + task.test_size - 1.0) > 1e-6:
         warnings.append("Configured train/val/test ratios do not sum to 1.0.")
     if case_df["label_name"].astype(str).value_counts().min() < 2:
-        warnings.append("At least one class has fewer than 2 cases; stratified holdout may fail.")
+        warnings.append(
+            "At least one outcome stratum has fewer than 2 cases; stratified holdout may fail."
+            if task.kind != "classification"
+            else "At least one class has fewer than 2 cases; stratified holdout may fail."
+        )
     return SplitPlanOption(
         plan_id="patient_stratified_holdout",
         strategy="train_val_test_holdout",
@@ -205,8 +212,10 @@ def _single_holdout_plan(case_df: pd.DataFrame, task: TaskSpec) -> SplitPlanOpti
         confirmation_required=True,
         split_unit="case",
         rationale=(
-            "Use a patient-level stratified train/validation/test split for quick pilots or demos. "
+            "Use a patient-level outcome-stratified train/validation/test split for quick pilots or demos. "
             "For manuscript-grade single-cohort evidence, prefer n-fold CV."
+            if task.kind != "classification"
+            else "Use a patient-level stratified train/validation/test split for quick pilots or demos. For manuscript-grade single-cohort evidence, prefer n-fold CV."
         ),
         expected_case_counts={
             "ratios": {
@@ -220,10 +229,14 @@ def _single_holdout_plan(case_df: pd.DataFrame, task: TaskSpec) -> SplitPlanOpti
 
 
 def plan_splits(dataset: DatasetSpec, task: TaskSpec) -> SplitPlanBundle:
-    slide_df, case_df, label_to_id, _missing_cases, _num_h5_total, feature = _load_h5_classification_slide_table(
-        dataset,
-        task,
-    )
+    if task.kind == "classification":
+        slide_df, case_df, label_to_id, _missing_cases, _num_h5_total, feature = _load_h5_classification_slide_table(
+            dataset,
+            task,
+        )
+    else:
+        outcome = load_outcome_task_tables(dataset, task)
+        slide_df, case_df, label_to_id, feature = outcome.slide_df, outcome.case_df, {}, outcome.feature
     profile = _profile_from_case_table(
         dataset=dataset,
         task=task,
@@ -251,7 +264,11 @@ def plan_splits(dataset: DatasetSpec, task: TaskSpec) -> SplitPlanBundle:
 
     global_warnings = []
     if profile.rarest_class_count is not None and profile.rarest_class_count < task.min_class_count:
-        global_warnings.append("Some classes are below min_class_count after matching slides to labels.")
+        global_warnings.append(
+            "Some outcome strata are below min_class_count after matching slides to labels."
+            if task.kind != "classification"
+            else "Some classes are below min_class_count after matching slides to labels."
+        )
     if profile.num_cases < 50:
         global_warnings.append("Dataset has fewer than 50 cases; use pilot claims cautiously.")
 

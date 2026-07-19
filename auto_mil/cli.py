@@ -22,6 +22,7 @@ from .manuscript_writer import write_manuscript_draft
 from .prediction_aggregator import aggregate_predictions
 from .proposal_generator import propose_nodes
 from .research import run_autonomous_research
+from .outcome_tasks import prepare_outcome_dataset, run_outcome_cv, run_outcome_holdout
 from .result_collector import collect_results, write_result_bundle
 from .split_planner import plan_splits, split_plan_to_payload, write_split_plan
 from .specs import describe_capabilities, specs_to_payload
@@ -45,11 +46,11 @@ def cmd_prepare_cptac(args: argparse.Namespace) -> None:
 
 def cmd_prepare_data(args: argparse.Namespace) -> None:
     cfg = load_config(args.config)
-    artifacts = prepare_dataset(
-        dataset=cfg.dataset_spec,
-        task=cfg.task_spec,
-        output_dir=Path(args.output_dir) if args.output_dir else cfg.output_dir / "dataset",
-    )
+    output_dir = Path(args.output_dir) if args.output_dir else cfg.output_dir / "dataset"
+    if cfg.task_spec.kind == "classification":
+        artifacts = prepare_dataset(dataset=cfg.dataset_spec, task=cfg.task_spec, output_dir=output_dir)
+    else:
+        artifacts = prepare_outcome_dataset(dataset=cfg.dataset_spec, task=cfg.task_spec, output_dir=output_dir)
     print(f"dataset_csv={artifacts.dataset_csv}")
     print(f"h5_paths_csv={artifacts.h5_paths_csv}")
     print(f"metadata_json={artifacts.metadata_json}")
@@ -57,6 +58,17 @@ def cmd_prepare_data(args: argparse.Namespace) -> None:
 
 def cmd_run(args: argparse.Namespace) -> None:
     cfg = load_config(args.config)
+    if cfg.task_spec.kind != "classification":
+        if args.dry_run:
+            raise NotImplementedError("Outcome task adapter does not provide dry-run; use prepare-data or a small epoch budget.")
+        report = run_outcome_holdout(
+            cfg,
+            split_plan_path=Path(args.split_plan) if args.split_plan else None,
+            split_plan_id=args.plan_id,
+            resume=args.resume,
+        )
+        print(f"report={report}")
+        return
     report = run_autonomous_research(
         cfg,
         max_screen_runs=args.max_screen_runs,
@@ -92,6 +104,8 @@ def cmd_inspect_spec(args: argparse.Namespace) -> None:
     print(f"feature_key={dataset.feature.feature_key}")
     print(f"coords_key={dataset.feature.coords_key}")
     print(f"feature_glob={dataset.feature.feature_glob}")
+    print(f"can_execute={str(payload['capabilities']['can_execute']).lower()}")
+    print(f"execution_adapter={payload['capabilities']['execution_adapter']}")
     print(f"can_prepare_mil_baseline={str(payload['capabilities']['can_prepare_mil_baseline']).lower()}")
     if payload["capabilities"]["blocked_reason"]:
         print(f"blocked_reason={payload['capabilities']['blocked_reason']}")
@@ -145,16 +159,29 @@ def cmd_plan_baselines(args: argparse.Namespace) -> None:
 def cmd_run_cv(args: argparse.Namespace) -> None:
     cfg = load_config(args.config)
     models = args.models.split(",") if args.models else None
-    report = run_case_level_cv(
-        cfg,
-        models=models,
-        n_splits=args.n_splits,
-        epochs=args.epochs,
-        split_plan_path=Path(args.split_plan) if args.split_plan else None,
-        split_plan_id=args.plan_id,
-        dry_run=args.dry_run,
-        resume=args.resume,
-    )
+    if cfg.task_spec.kind == "classification":
+        report = run_case_level_cv(
+            cfg,
+            models=models,
+            n_splits=args.n_splits,
+            epochs=args.epochs,
+            split_plan_path=Path(args.split_plan) if args.split_plan else None,
+            split_plan_id=args.plan_id,
+            dry_run=args.dry_run,
+            resume=args.resume,
+        )
+    else:
+        if args.dry_run:
+            raise NotImplementedError("Outcome task adapter does not provide dry-run; use prepare-data or a small epoch budget.")
+        report = run_outcome_cv(
+            cfg,
+            models=models,
+            n_splits=args.n_splits,
+            epochs=args.epochs,
+            split_plan_path=Path(args.split_plan) if args.split_plan else None,
+            split_plan_id=args.plan_id,
+            resume=args.resume,
+        )
     print(f"report={report}")
 
 

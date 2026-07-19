@@ -8,6 +8,7 @@ from typing import Any
 
 from .baseline_registry import available_models
 from .data import _load_h5_classification_slide_table
+from .outcome_tasks import VENDORED_OUTCOME_MODELS, load_outcome_task_tables
 from .specs import DatasetSpec, TaskSpec
 from .state import json_ready
 
@@ -121,6 +122,26 @@ BASELINE_FAMILIES: dict[str, BaselineFamilySpec] = {
 
 
 DEFAULT_SCREEN_ORDER = ["AB_MIL", "TRANS_MIL", "RRT_MIL", "STABLE_MIL", "GDF_MIL"]
+OUTCOME_SCREEN_ORDER = ["AB_MIL", "TRANS_MIL", "RRT_MIL", "STABLE_MIL", "GDF_MIL"]
+OUTCOME_SUPPORTED_MODELS = set(VENDORED_OUTCOME_MODELS)
+OUTCOME_OPTIONAL_DEPENDENCIES: dict[str, list[str]] = {
+    "LONG_MIL": ["xformers"],
+    "MAMBA_MIL": ["mamba_ssm"],
+    "MAMBA2D_MIL": ["mamba_ssm"],
+    "MICRO_MIL": ["dgl"],
+    "MSM_MIL": ["mamba_ssm"],
+    "WIKG_MIL": ["torch_geometric"],
+    "DT_MIL": ["MultiScaleDeformableAttention"],
+}
+
+
+def _outcome_dependency_status(model_name: str, dependencies: list[str]) -> dict[str, bool]:
+    status = _dependency_status(dependencies + OUTCOME_OPTIONAL_DEPENDENCIES.get(model_name, []))
+    if model_name == "PGCN_MIL":
+        status["torch_geometric_or_dgl"] = any(
+            importlib.util.find_spec(package) is not None for package in ("torch_geometric", "dgl")
+        )
+    return status
 
 
 def _dependency_status(dependencies: list[str]) -> dict[str, bool]:
@@ -182,6 +203,50 @@ def build_baseline_plan(
     mil_baseline_dir: str | Path | None = None,
     models: list[str] | None = None,
 ) -> BaselinePlan:
+    if task.kind != "classification":
+        tables = load_outcome_task_tables(dataset, task)
+        has_coords = _has_real_coords(tables.feature)
+        registry = available_models(mil_baseline_dir)
+        names = models or OUTCOME_SCREEN_ORDER
+        assessments = []
+        for name in names:
+            spec = BASELINE_FAMILIES.get(name, BaselineFamilySpec(name, "other", "unclassified"))
+            dep_status = _outcome_dependency_status(name, spec.dependencies)
+            is_native = name in {"MEAN_MIL", "MAX_MIL", "GATE_AB_MIL"}
+            vendored = registry.get(name)
+            has_vendored_module = bool(vendored and vendored.has_module)
+            compatible = name in OUTCOME_SUPPORTED_MODELS and (is_native or has_vendored_module) and all(dep_status.values())
+            warnings = [] if compatible else ["Outcome adapter does not support this model or a required runtime dependency is unavailable."]
+            if name in OUTCOME_SCREEN_ORDER and not has_vendored_module:
+                warnings.append("The selected MIL_BASELINE directory does not contain this model module.")
+            if spec.coordinate_policy == "recommended" and not has_coords:
+                warnings.append("Real coordinates are recommended; this model will use its vendored pseudo-grid fallback.")
+            assessments.append(
+                BaselineAssessment(
+                    model_name=name,
+                    tier=spec.tier,
+                    family=spec.family,
+                    trainable=compatible,
+                    compatible=compatible,
+                    recommended_for_screen=name in OUTCOME_SCREEN_ORDER and compatible,
+                    coordinate_policy="not_required",
+                    has_real_coords=has_coords,
+                    dependency_status=dep_status,
+                    memory_risk=spec.memory_risk,
+                    default_role=spec.default_role,
+                    warnings=warnings,
+                    notes="Uses the vendored MIL encoder/aggregator with Auto-MIL's task-specific head and outcome loss, not the classification-only MIL_BASELINE trainer.",
+                    pilot_overrides={},
+                )
+            )
+        return BaselinePlan(
+            dataset=dataset.name,
+            feature=tables.feature,
+            has_real_coords=has_coords,
+            recommended_screen=[name for name in OUTCOME_SCREEN_ORDER if any(item.model_name == name and item.compatible for item in assessments)],
+            assessments=assessments,
+            warnings=["Outcome runs reuse supported vendored MIL aggregators but replace their classification head and loss with task-specific components."],
+        )
     _slide_df, _case_df, _label_to_id, _missing, _total, feature = _load_h5_classification_slide_table(dataset, task)
     has_coords = _has_real_coords(feature)
     registry = available_models(mil_baseline_dir)

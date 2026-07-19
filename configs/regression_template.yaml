@@ -1,0 +1,39 @@
+name: regression_project
+dataset:
+  name: regression-dataset
+  bag_level: case
+  case_id_column: case_id
+  feature:
+    format: pt
+    feature_key: features
+    coords_key: coords
+    case_id_regex: "^(?P<case>[A-Za-z0-9]+)-"
+    feature_glob: "**/features/*.pt"
+
+task:
+  kind: regression
+  target_column: target_value
+  primary_metric: test_rmse
+  split_seed: 2024
+  cv_val_fraction_of_train: 0.2
+
+paths:
+  data_dir: D:\path\to\features
+  labels_csv: D:\path\to\labels.csv
+  mil_baseline_dir: third_party\MIL_BASELINE
+  output_dir: runs\regression_project
+  python: python
+
+training:
+  device: 0
+  cv_epochs: 20
+  max_patches_per_bag: 2048
+
+search:
+  cv_models: [AB_MIL, TRANS_MIL, RRT_MIL, STABLE_MIL, GDF_MIL]
+  learning_rates: [0.0002]
+  dropouts: [0.1]
+
+# Optional constructor overrides for outcome-task backbones.
+# outcome_models:
+#   TRANS_MIL: {hidden_dim: 256, num_heads: 8}

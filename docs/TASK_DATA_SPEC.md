@@ -5,10 +5,12 @@ Auto-MIL normalizes user/project configuration into two stable interfaces:
 - `TaskSpec`: the prediction target and evaluation contract
 - `DatasetSpec`: where bags, labels, identifiers, cohorts, and feature keys live
 
-The current training adapter executes classification tasks with H5 feature bags
-through MIL_BASELINE. Prognosis/survival and regression fields are already
-represented in `TaskSpec` so future adapters can be added without changing the
-outer research workflow.
+Classification tasks execute through MIL_BASELINE. Regression and
+prognosis/survival execute through the built-in task-aware MIL adapter with
+task-specific heads/losses. Their initial screen can reuse vendored `AB_MIL`,
+`TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and `GDF_MIL` aggregators, while keeping
+mean/max/gated-attention MIL as sanity baselines. All three task kinds accept H5
+or PT feature bags and preserve the same case-level workflow.
 
 ## Config Shape
 
@@ -89,23 +91,51 @@ The planner inspects feature keys and coordinate availability, then writes
 
 ## Supported Now
 
-- task kind: `classification`
-- feature format: H5 files under `dataset.data_dir` or `paths.data_dir`
+- task kinds: `classification`, `regression`, `prognosis` / `survival`
+- feature format: H5 or PT files under `dataset.data_dir` or `paths.data_dir`
 - feature key: configurable, defaults to `features`
 - split unit: case/patient id
 - bag level: `case` by default. Auto-MIL concatenates patch features from all
   slides belonging to the same case into one generated H5 bag before training.
   Use `dataset.bag_level: slide` only when deliberately treating each slide as a
   separate MIL sample.
-- labels: CSV with a case id column and a classification label column
+- classification labels: `task.label_column`, with optional `label_threshold`
+- regression labels: numeric `task.target_column`; reports MAE/RMSE/R2/Spearman
+- survival labels: positive `task.time_column` and binary `task.event_column`; trains with Cox partial likelihood and reports C-index
+- outcome MIL backbones: all 41 audited vendored head/loss candidates, which
+  retain their patch encoder/aggregator but replace the classification head with
+  one continuous risk/target head. The default screen remains `AB_MIL`,
+  `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and `GDF_MIL`; the full compatibility,
+  coordinate, asset, and dependency matrix is in
+  `docs/VENDORED_OUTCOME_ADAPTATION_AUDIT.md`. Real patch coordinates remain
+  preferable for spatial methods, even when a pseudo-grid fallback exists.
 - optional metadata: center, cohort, external-test indicator, coordinate key
 - split planning: predefined external-test, center-holdout, single-cohort
   stratified CV, and pilot train/val/test holdout
-- split execution: CV plans for `run-cv` and `run-innovation-cv`; holdout,
-  external-test, and center-holdout plans for `run` and `run-tree`
+- split execution: `run-cv` executes deterministic patient-level CV for all
+  three task kinds; `run` executes confirmed patient-level holdout, external
+  test, or center-holdout plans for all three task kinds. Both record the
+  confirmed plan in output metadata. The current innovation/ablation/tree
+  paths remain classification-only.
 
-## Reserved Next
+## Task Examples
 
-- `prognosis` / `survival`: `time_column` and `event_column`
-- `regression`: `target_column`
-- explicit slide manifest files through `slide_path_column`
+```yaml
+task:
+  kind: regression
+  target_column: ki67_percent
+  primary_metric: test_rmse
+```
+
+```yaml
+task:
+  kind: survival
+  time_column: overall_survival_months
+  event_column: overall_survival_event
+  primary_metric: test_c_index
+```
+
+Use `run-cv --models AB_MIL,TRANS_MIL,RRT_MIL,STABLE_MIL,GDF_MIL` for the first
+outcome-task baseline screen; add `MEAN_MIL`, `MAX_MIL`, or `GATE_AB_MIL` as
+sanity baselines. Explicit slide manifest files through `slide_path_column` are
+also supported.

@@ -252,16 +252,21 @@ By default, outputs land under `runs/cptac_brca_pam50/`:
 
 ## Task/Data Interface
 
-Configuration is normalized into `TaskSpec` and `DatasetSpec`. The current
-runner supports classification with H5 feature bags or PT feature dictionaries
-containing `features`/`coords`, configurable feature keys, recursive feature
-globs, CSV/XLSX label tables, and optional numeric-label thresholding for
-binary classification. The default bag level is `case`, meaning multiple slides
-from the same patient/case are concatenated into one MIL bag before training.
-Set `dataset.bag_level: slide` only when intentionally running slide-level MIL
-or when each case has exactly one feature bag and copying large features would
-only slow down a smoke test. Prognosis/survival and regression fields are
-represented for the next adapters. See `docs/TASK_DATA_SPEC.md`.
+Configuration is normalized into `TaskSpec` and `DatasetSpec`. The runner
+executes classification, regression, and prognosis/survival with H5 feature
+bags or PT feature dictionaries containing configurable feature keys. The
+classification path uses MIL_BASELINE; regression and survival use the built-in
+task-aware adapter. For outcome tasks it supports all 41 audited head/loss
+vendored backbones, reusing their encoder/aggregator and replacing the
+classification head with a one-output regression/risk head. The default screen
+is `AB_MIL`, `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and `GDF_MIL`; `MEAN_MIL`,
+`MAX_MIL`, and `GATE_AB_MIL` remain lightweight sanity baselines. See
+`docs/VENDORED_OUTCOME_ADAPTATION_AUDIT.md` for constraints and dependencies.
+The default bag level is `case`, meaning multiple slides from the same
+patient/case are concatenated into one MIL bag before training. Set
+`dataset.bag_level: slide` only when intentionally running slide-level MIL.
+Regression reports MAE, RMSE, R2, and Spearman correlation. Survival uses Cox
+partial likelihood and reports C-index. See `docs/TASK_DATA_SPEC.md`.
 
 ## Split Planner
 
@@ -274,7 +279,7 @@ Training commands can consume a confirmed plan:
 
 - `run-cv --split-plan ...` accepts `n_fold_cross_validation` plans.
 - `run-innovation-cv --split-plan ...` uses the same CV split for innovation experiments.
-- `run --split-plan ... --plan-id patient_stratified_holdout` accepts holdout/external/center plans.
+- `run --split-plan ... --plan-id patient_stratified_holdout` accepts holdout/external/center plans for classification, regression, and survival.
 - `run-tree --split-plan ... --plan-id ...` accepts holdout/external/center plans.
 
 The selected plan is written into run metadata under `confirmed_split`.

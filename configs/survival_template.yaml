@@ -1,0 +1,40 @@
+name: survival_project
+dataset:
+  name: survival-dataset
+  bag_level: case
+  case_id_column: case_id
+  feature:
+    format: h5
+    feature_key: features
+    coords_key: coords
+    case_id_regex: "^(?P<case>[A-Za-z0-9]+)-"
+    feature_glob: "*.h5"
+
+task:
+  kind: survival
+  time_column: overall_survival_months
+  event_column: overall_survival_event
+  primary_metric: test_c_index
+  split_seed: 2024
+  cv_val_fraction_of_train: 0.2
+
+paths:
+  data_dir: D:\path\to\features
+  labels_csv: D:\path\to\clinical.csv
+  mil_baseline_dir: third_party\MIL_BASELINE
+  output_dir: runs\survival_project
+  python: python
+
+training:
+  device: 0
+  cv_epochs: 20
+  max_patches_per_bag: 2048
+
+search:
+  cv_models: [AB_MIL, TRANS_MIL, RRT_MIL, STABLE_MIL, GDF_MIL]
+  learning_rates: [0.0002]
+  dropouts: [0.1]
+
+# Optional constructor overrides for outcome-task backbones.
+# outcome_models:
+#   STABLE_MIL: {hidden_dim: 256, depth: 2, aggregate_num: 64}
