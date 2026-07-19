@@ -12,8 +12,14 @@ venv/
 env/
 *.egg-info/
 
-# Auto-MIL run artifacts
+# Auto-MIL run artifacts. Keep the explicit project workspace trackable.
 runs/
+!runs/
+!runs/*/
+runs/*/*
+!runs/*/project/
+!runs/*/project/**
+runs/*/artifacts/
 experiments/
 logs/
 outputs/

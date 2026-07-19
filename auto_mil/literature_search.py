@@ -57,6 +57,7 @@ def run_literature_search(
     max_papers: int | None = None,
     min_year: int | None = None,
     user_sources: str | Path | None = None,
+    local_review: str | Path | None = None,
     offline: bool = False,
 ) -> tuple[Path, Path]:
     settings = cfg.raw.get("innovation", {}).get("literature_search", {})
@@ -67,8 +68,12 @@ def run_literature_search(
     min_year = int(min_year if min_year is not None else settings.get("min_year", 2023))
 
     warnings: list[str] = []
-    papers = _load_user_papers(cfg, user_sources=user_sources, warnings=warnings)
-    mode = "user_provided"
+    local_papers = _load_local_review(cfg, local_review=local_review, warnings=warnings)
+    user_papers = _load_user_papers(cfg, user_sources=user_sources, warnings=warnings)
+    papers = [*local_papers, *user_papers]
+    mode = "local_review" if local_papers else "user_provided"
+    if local_papers and user_papers:
+        mode = "local_review_plus_user"
     if not papers and not offline:
         mode = "auto_search"
         papers = _auto_search(query=query, max_papers=max_papers, min_year=min_year, warnings=warnings)
@@ -113,6 +118,46 @@ def _load_user_papers(cfg: AutoMilConfig, *, user_sources: str | Path | None, wa
     if source_path:
         papers.extend(_load_papers_file(Path(source_path), warnings=warnings))
     return papers
+
+
+def _load_local_review(
+    cfg: AutoMilConfig,
+    *,
+    local_review: str | Path | None,
+    warnings: list[str],
+) -> list[LiteraturePaper]:
+    settings = cfg.raw.get("innovation", {}).get("literature_search", {})
+    review_path = local_review or settings.get("local_review_path")
+    if not review_path:
+        return []
+
+    path = Path(review_path)
+    if not path.exists():
+        warnings.append(f"Local literature review not found: {path}")
+        return []
+    overview_path = path / "MIL_methods_overview.md" if path.is_dir() else path
+    if not overview_path.is_file():
+        warnings.append(f"Local literature overview is not a readable file: {overview_path}")
+        return []
+    try:
+        overview = overview_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        warnings.append(f"Could not read local literature overview {overview_path}: {exc}")
+        return []
+
+    summary_dir = overview_path.parent / "method_summaries"
+    summary_count = len([item for item in summary_dir.glob("*.md") if item.name.lower() != "readme.md"]) if summary_dir.is_dir() else 0
+    if not summary_count:
+        warnings.append(f"Local review has no method_summaries directory next to {overview_path}; using overview only.")
+    return [
+        LiteraturePaper(
+            title=f"Local pathology MIL literature review ({summary_count} method summaries)",
+            venue="local literature corpus",
+            url=str(overview_path),
+            abstract=overview,
+            source="local_review",
+        )
+    ]
 
 
 def _load_papers_file(path: Path, warnings: list[str]) -> list[LiteraturePaper]:

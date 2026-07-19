@@ -253,6 +253,7 @@ def cmd_literature_search(args: argparse.Namespace) -> None:
         max_papers=args.max_papers,
         min_year=args.min_year,
         user_sources=Path(args.user_sources) if args.user_sources else None,
+        local_review=Path(args.local_review) if args.local_review else None,
         offline=args.offline,
     )
     print(f"literature_report={report}")
@@ -610,7 +611,12 @@ def build_parser() -> argparse.ArgumentParser:
     literature.add_argument("--max-papers", type=int, default=None)
     literature.add_argument("--min-year", type=int, default=None)
     literature.add_argument("--user-sources", default=None, help="Optional user-provided JSON/CSV/TSV paper list")
-    literature.add_argument("--offline", action="store_true", help="Do not use online search; use only user/config sources")
+    literature.add_argument(
+        "--local-review",
+        default=None,
+        help="Local overview Markdown or corpus directory; use it before online search",
+    )
+    literature.add_argument("--offline", action="store_true", help="Do not use online search; use local/user/config sources only")
     literature.set_defaults(func=cmd_literature_search)
 
     baselines = sub.add_parser("list-baselines", help="List bundled or configured MIL_BASELINE models")

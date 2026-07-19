@@ -347,6 +347,15 @@ checkpoint for resume.
 ## Literature and Proposal Search
 
 Before starting a method-innovation loop, run one literature/proposal search.
+If the user provides a local method-review corpus, use it before online search:
+
+```powershell
+& "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli literature-search `
+  --config configs\gastric_ki67_binary50.yaml `
+  --local-review MIL_methods_overview.md `
+  --offline
+```
+
 If the user provides papers or proposal drafts, pass them as JSON/CSV/TSV and
 use `--offline` to avoid online search:
 
