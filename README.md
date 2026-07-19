@@ -258,9 +258,11 @@ bags or PT feature dictionaries containing configurable feature keys. The
 classification path uses MIL_BASELINE; regression and survival use the built-in
 task-aware adapter. For outcome tasks it supports all 41 audited head/loss
 vendored backbones, reusing their encoder/aggregator and replacing the
-classification head with a one-output regression/risk head. The default screen
-is `AB_MIL`, `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and `GDF_MIL`; `MEAN_MIL`,
-`MAX_MIL`, and `GATE_AB_MIL` remain lightweight sanity baselines. See
+classification head with a one-output regression/risk head. The bundled starter
+screen is `AB_MIL`, `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and `GDF_MIL`;
+`MEAN_MIL`, `MAX_MIL`, and `GATE_AB_MIL` remain lightweight sanity baselines.
+Select the final five comparison methods through task-directed literature
+evidence and runtime validation. See
 `docs/VENDORED_OUTCOME_ADAPTATION_AUDIT.md` for constraints and dependencies.
 The default bag level is `case`, meaning multiple slides from the same
 patient/case are concatenated into one MIL bag before training. Set
@@ -288,9 +290,13 @@ The selected plan is written into run metadata under `confirmed_split`.
 
 `plan-baselines` checks the bundled MIL_BASELINE methods against the current
 dataset and runtime. It reports trainability, baseline family, coordinate needs,
-dependency status, memory risk, and a recommended manuscript screen. The default
-screen is `AB_MIL`, `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and `GDF_MIL` when
-compatible.
+dependency status, memory risk, and a recommended **functional starter screen**.
+The bundled default (`AB_MIL`, `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and
+`GDF_MIL` when compatible) validates the pipeline but is not an automatic
+manuscript comparison table. Before final comparison, use task-directed literature
+evidence to select exactly five task-valid methods, prioritizing work from the
+past 1-2 years in high-impact journals or leading conferences, then confirm that
+each method is reproducible in the active runtime.
 
 ## Statistical Analysis
 

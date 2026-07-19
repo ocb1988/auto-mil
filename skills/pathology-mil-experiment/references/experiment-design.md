@@ -90,16 +90,20 @@ Regression:
 
 ## Baseline Selection
 
-Classification default:
+Use a two-stage baseline policy. First run a small functional screen to validate
+the pipeline; `AB_MIL`, `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and `GDF_MIL`,
+with optional `MEAN_MIL`/`MAX_MIL`, are suitable bundled starter models. They
+are not an automatic manuscript comparison suite.
 
-- sanity/light pooling: `MEAN_MIL`, `MAX_MIL`
-- classic attention MIL: `AB_MIL`, `GATE_AB_MIL`, `CLAM_SB_MIL` or `CLAM_MB_MIL`
-- strong classic/context MIL: `TRANS_MIL`, `RRT_MIL`
-- recent competitive MIL supported by the local baseline repo: `STABLE_MIL`, `GDF_MIL`
-- coordinate-aware method if coordinates exist: `DAG_MIL`, `PSA_MIL`, `SC_MIL`, `MAMBA2D_MIL`, `STABLE_MIL`
-- optional additional methods when the repo and runtime support them: `FR_MIL`, `AMD_MIL`, `FOURIER_MIL`, `AEM_MIL`, `TDA_MIL`, or mixup-style MIL variants
-
-For the first pass, choose 4-5 informative baselines rather than a huge sweep. A good manuscript-oriented screen is usually `AB_MIL`, `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and `GDF_MIL`, with `MEAN_MIL`/`MAX_MIL` added as cheap sanity checks when feasible. For the final comparison table, include both classic and recent methods; avoid presenting a paper baseline table that contains only pooling and attention baselines.
+For the final table, select exactly five methods after a task-directed
+literature search. Prioritize work from the preceding 1-2 years in high-impact
+journals (IEEE-TMI, Medical Image Analysis, IEEE-TPAMI) or leading conferences
+(CVPR, NeurIPS, AAAI, ICLR, ICML), then filter for direct classification,
+regression, or survival validity. Record each candidate's paper, year, venue,
+task evidence, repo/code mapping, input requirements, reproducibility status,
+and exclusion reason. Use older classic methods only as clearly labeled
+historical anchors when fewer than five recent, reproducible, task-valid methods
+are available.
 
 Before confirming the baseline suite:
 
@@ -113,10 +117,11 @@ When using this repo, run the baseline planner after confirming the split:
 python -m auto_mil.cli plan-baselines --config configs\my_experiment.yaml
 ```
 
-Review `baseline_plan.md` with the user before training. Prefer the default
-manuscript screen `AB_MIL`, `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and
-`GDF_MIL` when compatible, and add spatial methods such as `DAG_MIL`,
-`PSA_MIL`, or `SC_MIL` only after checking coordinate support and memory risk.
+Review `baseline_plan.md` with the user before training. Treat its default
+screen as a runtime compatibility check, then present the literature evidence
+table and obtain confirmation for the five final comparison methods. Add spatial
+methods such as `DAG_MIL`, `PSA_MIL`, or `SC_MIL` only after checking coordinate
+support and memory risk.
 
 ## Metrics
 

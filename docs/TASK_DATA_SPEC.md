@@ -104,9 +104,11 @@ The planner inspects feature keys and coordinate availability, then writes
 - survival labels: positive `task.time_column` and binary `task.event_column`; trains with Cox partial likelihood and reports C-index
 - outcome MIL backbones: all 41 audited vendored head/loss candidates, which
   retain their patch encoder/aggregator but replace the classification head with
-  one continuous risk/target head. The default screen remains `AB_MIL`,
-  `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and `GDF_MIL`; the full compatibility,
-  coordinate, asset, and dependency matrix is in
+  one continuous risk/target head. The bundled functional starter screen is
+  `AB_MIL`, `TRANS_MIL`, `RRT_MIL`, `STABLE_MIL`, and `GDF_MIL`; select the
+  final five comparison methods through task-directed literature evidence and
+  runtime validation. The full compatibility, coordinate, asset, and dependency
+  matrix is in
   `docs/VENDORED_OUTCOME_ADAPTATION_AUDIT.md`. Real patch coordinates remain
   preferable for spatial methods, even when a pseudo-grid fallback exists.
 - optional metadata: center, cohort, external-test indicator, coordinate key
@@ -135,7 +137,9 @@ task:
   primary_metric: test_c_index
 ```
 
-Use `run-cv --models AB_MIL,TRANS_MIL,RRT_MIL,STABLE_MIL,GDF_MIL` for the first
-outcome-task baseline screen; add `MEAN_MIL`, `MAX_MIL`, or `GATE_AB_MIL` as
-sanity baselines. Explicit slide manifest files through `slide_path_column` are
-also supported.
+Use `run-cv --models AB_MIL,TRANS_MIL,RRT_MIL,STABLE_MIL,GDF_MIL` only for the
+first outcome-task functional screen; add `MEAN_MIL`, `MAX_MIL`, or
+`GATE_AB_MIL` as sanity baselines. Before reporting a manuscript comparison,
+replace that list with the five literature-selected methods that are directly
+valid for the target task and reproducible in the active runtime. Explicit slide
+manifest files through `slide_path_column` are also supported.

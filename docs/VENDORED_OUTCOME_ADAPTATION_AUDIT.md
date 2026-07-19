@@ -114,8 +114,12 @@ the 41. The remaining six require external runtime components: `DT_MIL`
 
 ## Auto-MIL Implementation Priority
 
-1. Use the five validated screen models: `AB_MIL`, `TRANS_MIL`, `RRT_MIL`,
-   `STABLE_MIL`, and `GDF_MIL`, plus pooling sanity baselines.
+1. Use the five validated models `AB_MIL`, `TRANS_MIL`, `RRT_MIL`,
+   `STABLE_MIL`, and `GDF_MIL` only as a functional starter screen, plus pooling
+   sanity baselines. For a manuscript comparison, select exactly five task-valid
+   methods through a documented literature review that prioritizes the preceding
+   1-2 years and high-impact journals/conferences; do not treat this starter list
+   as the final comparison by default.
 2. Add per-method outcome smoke tests and install the remaining documented optional
    dependencies only when a project selects those methods.
 3. Keep real patch coordinates enabled before reporting coordinate-aware methods

@@ -30,6 +30,8 @@ training:
   max_patches_per_bag: 2048
 
 search:
+  # Functional starter screen only. Replace with five literature-selected,
+  # task-valid comparison methods after the baseline confirmation gate.
   cv_models: [AB_MIL, TRANS_MIL, RRT_MIL, STABLE_MIL, GDF_MIL]
   learning_rates: [0.0002]
   dropouts: [0.1]

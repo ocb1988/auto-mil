@@ -245,7 +245,10 @@ def build_baseline_plan(
             has_real_coords=has_coords,
             recommended_screen=[name for name in OUTCOME_SCREEN_ORDER if any(item.model_name == name and item.compatible for item in assessments)],
             assessments=assessments,
-            warnings=["Outcome runs reuse supported vendored MIL aggregators but replace their classification head and loss with task-specific components."],
+            warnings=[
+                "Outcome runs reuse supported vendored MIL aggregators but replace their classification head and loss with task-specific components.",
+                "The recommended screen is a functional starter set, not a manuscript comparison table. Select five final baselines through task-directed literature evidence, venue/year review, and runtime validation.",
+            ],
         )
     _slide_df, _case_df, _label_to_id, _missing, _total, feature = _load_h5_classification_slide_table(dataset, task)
     has_coords = _has_real_coords(feature)
@@ -265,6 +268,10 @@ def build_baseline_plan(
     recommended = [name for name in DEFAULT_SCREEN_ORDER if any(a.model_name == name and a.compatible for a in assessments)]
     if len(recommended) < 4:
         warnings.append("Fewer than four preferred screen baselines are compatible; inspect warnings before running.")
+    warnings.append(
+        "The recommended screen is a functional starter set, not a manuscript comparison table. "
+        "Select five final baselines through task-directed literature evidence, venue/year review, and runtime validation."
+    )
     return BaselinePlan(
         dataset=dataset.name,
         feature=feature,
