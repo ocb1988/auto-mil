@@ -125,7 +125,7 @@ The planner inspects feature keys and coordinate availability, then writes
 ```yaml
 task:
   kind: regression
-  target_column: ki67_percent
+  target_column: target_value
   primary_metric: test_rmse
 ```
 

@@ -9,9 +9,9 @@ description: Plan, run, iterate, package, and write manuscript-grade experimenta
 
 Run this as a staged research workflow with explicit user confirmations at decision gates. Do not jump straight into training unless the task, data, environment, split plan, baseline plan, and innovation plan are already clear and confirmed.
 
-## Reusable Core and Run Workspace Rule
+## Repo and Run Workspace Rule
 
-Treat `auto_mil/`, `third_party/MIL_BASELINE/`, and shared root-level configs as a reusable, versioned core. Do not edit them for the needs of one dataset or one paper experiment. Before data exploration, create one project workspace at `runs/<project_slug>/project/` and keep all project-specific state there. Keep transient training outputs under the same `runs/<project_slug>/` root, outside `project/`.
+Treat `auto_mil/`, `third_party/MIL_BASELINE/`, and shared root-level configs as a reusable, versioned core that may be edited during an experiment when the implementation needs it. Before data exploration, create one project workspace at `runs/<project_slug>/project/` and keep all project-specific state there. Keep transient training outputs under the same `runs/<project_slug>/` root, outside `project/`.
 
 Use this layout:
 
@@ -28,13 +28,11 @@ runs/<project_slug>/
   artifacts/                  # ignored logs, checkpoints, predictions, figures, reports
 ```
 
-Put every dataset- or paper-specific change under that workspace, including label normalization, ID mapping, feature readers, data adapters, custom model/loss modules, per-project command wrappers, configs, split files, proposals, and manuscript artifacts. Never modify a vendored baseline in place for a project experiment; wrap or override it from `runs/<project_slug>/project/src/` and record the exact invocation.
+Prefer the workspace for dataset- or paper-specific state, including label normalization, ID mapping, generated configs, split files, proposals, manuscript artifacts, and transient wrappers. Direct repository changes are allowed for new models, losses, trainers, data interfaces, vendored baseline adaptations, and shared configs when they make the experiment clearer or more capable. Record the exact invocation and all touched paths.
 
 Keep source/config/record files in the run workspace eligible for git tracking; keep large features, checkpoints, caches, logs, and generated predictions ignored. Each run must record the core commit, dirty-state summary, project source/config paths, and commands so that it can be replayed against the same core revision.
 
-Change the reusable core only when the change is demonstrably generic across projects. Make that a separate, tested, explicitly described core commit before or after the project experiment; do not hide a dataset-specific workaround inside `auto_mil/` or `third_party/MIL_BASELINE/`.
-
-If the core lacks an extension point needed by a project, first propose a generic plugin/adapter interface and obtain approval for it as core work. Do not bypass this rule by inserting the project's model code into a shared training module.
+When modifying the reusable core, use a focused, tested commit and record why the change was made, which experiment used it, and the pre-change core revision. A dataset-specific shortcut is allowed when useful, but it must be documented in the project journal and should not silently alter unrelated workflows.
 
 ## Innovation Integrity Rule
 
@@ -88,8 +86,8 @@ Use Camyla-style proposal discipline for method innovation:
 
 6. Run baseline screen.
    - Use `auto_mil.cli` when the repo already supports the data/task.
-   - Otherwise adapt through `runs/<project_slug>/project/src/` or `runs/<project_slug>/project/patches/`, keeping generated configs, stdout, metrics, and checkpoints under that project's run root. Do not make a dataset-specific edit to the reusable core.
-   - Commit or at least record git status before and after material code changes. Record project-workspace source changes separately from any approved generic core change.
+   - Otherwise implement the needed adapter, model, loss, trainer, or baseline change in the repository or project workspace as appropriate; keep generated configs, stdout, metrics, and checkpoints under that project's run root.
+   - Commit or at least record git status before and after material code changes. Link repository changes and project-workspace changes to the relevant experiment record.
 
 7. Propose 1-2 innovation points and stop for confirmation.
    - Before proposing method innovations, ask whether the user has seed papers, methods, or proposal drafts. Accept JSON/CSV lists, paper titles/URLs, copied abstracts, or a short written method idea.
@@ -137,8 +135,8 @@ Use Camyla-style proposal discipline for method innovation:
    - Do not overclaim from a single split or a small pilot.
 
 11. Version-control handoff.
-   - Keep project code changes, configs, records, and manuscript workflow changes under `runs/<project_slug>/project/` in small commits with descriptive messages. Do not commit large run artifacts.
-   - Keep generic framework changes outside `runs/` in separate commits that identify why they generalize beyond the current project.
+   - Keep project code changes, repository code changes, configs, records, and manuscript workflow changes in small commits with descriptive messages. Do not commit large run artifacts.
+   - For changes outside `runs/`, record the affected experiment and add focused tests or smoke validation when practical.
    - Before pushing, verify `git status`, `git remote -v`, and the intended GitHub account/repository with the user.
    - Never store GitHub passwords or personal access tokens in the repo or experiment logs.
    - Push only after the user confirms the target remote.
@@ -159,7 +157,7 @@ Use `scripts/init_experiment_record.py` to create an isolated project workspace 
 python skills\pathology-mil-experiment\scripts\init_experiment_record.py --run-dir runs\my_experiment --title "My pathology MIL experiment"
 ```
 
-The script creates `project/` with the plan/journal/manifest plus `configs/`, `src/`, `patches/`, and `records/`; it also creates the ignored `artifacts/` directory. Treat `project/src/` as the only location for project-specific code.
+The script creates `project/` with the plan/journal/manifest plus `configs/`, `src/`, `patches/`, and `records/`; it also creates the ignored `artifacts/` directory. Use `project/src/` for project-local code, or modify the repository directly when that is the clearer implementation path; record either choice in the journal.
 
 ## Confirmation Gates
 

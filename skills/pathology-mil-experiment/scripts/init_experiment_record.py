@@ -42,7 +42,7 @@ def main() -> None:
     source_init = project_dir / "src" / "__init__.py"
     if not source_init.exists():
         source_init.write_text(
-            '"""Project-specific Auto-MIL extensions. Keep reusable core unchanged."""\n',
+            '"""Project-local Auto-MIL extensions; repository changes are also allowed when recorded."""\n',
             encoding="utf-8",
         )
 
@@ -56,7 +56,7 @@ def main() -> None:
                     "task": args.task,
                     "created_at": datetime.now().isoformat(timespec="seconds"),
                     "workspace_policy": {
-                        "core_immutable_for_project_work": True,
+                        "repository_edits_allowed": True,
                         "project_source_dir": "src",
                         "project_config_dir": "configs",
                         "project_patch_dir": "patches",
@@ -87,7 +87,7 @@ def main() -> None:
                     "## Workspace Isolation",
                     "",
                     f"- Project workspace: `{project_dir}`",
-                    "- Reusable core: do not edit `auto_mil/` or `third_party/MIL_BASELINE/` for this project.",
+                    "- Repository code: `auto_mil/` and `third_party/MIL_BASELINE/` may be edited when the change is recorded and linked to the experiment.",
                     "- Project code: `src/`",
                     "- Project configs: `configs/`",
                     "- Adapter/override patches: `patches/`",

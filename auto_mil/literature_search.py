@@ -305,7 +305,7 @@ def _build_proposals(papers: list[LiteraturePaper]) -> list[LiteratureProposal]:
         proposals.append(
             LiteratureProposal(
                 name="prototype_guided_mil",
-                motivation="Ki-67 and other biomarkers may be driven by sparse discriminative regions inside large bags.",
+                motivation="Biomarker prediction may be driven by sparse discriminative regions inside large bags.",
                 core_modules=["class prototype memory", "hard-instance auxiliary objective"],
                 mechanism="Maintain class prototypes from high-attention instances and regularize bag embeddings toward class-consistent prototypes.",
                 expected_contribution="Make the attention model less sensitive to noisy or weakly informative patches.",

@@ -2,16 +2,13 @@
 
 ## Innovation Constraints
 
-Run an innovation loop inside one isolated project workspace, normally
-`runs/<project_slug>/project/`. Keep project-specific method code, loss modules,
-feature adapters, configs, proposal records, and ablation definitions in that
-workspace. Treat `auto_mil/` and `third_party/MIL_BASELINE/` as immutable
-reusable core during a project loop; never patch a vendored implementation in
-place to test a project idea.
-
-If an extension hook is missing, stop and propose a separately scoped generic
-core interface. Do not insert a project method into a shared trainer as a
-shortcut.
+Run an innovation loop with one project workspace, normally
+`runs/<project_slug>/project/`, for records, generated configs, proposals,
+ablations, and artifacts. Modify `auto_mil/`, `third_party/MIL_BASELINE/`, or
+shared configs directly when that is the clearest way to implement a proposed
+method. Record every repository path changed, the core Git revision, and the
+experiment that motivated it; do not leave unrecorded changes that alter another
+workflow.
 
 Propose 1-2 innovations at a time. Each innovation must be:
 
@@ -46,8 +43,8 @@ For each round:
 1. State hypothesis.
 2. Identify code/config changes.
 3. Record the core commit/dirty state and the project workspace source/config paths.
-4. Implement the minimal project change under `runs/<project_slug>/project/src/` or
-   `runs/<project_slug>/project/configs/`.
+4. Implement the minimal change in the repository or under
+   `runs/<project_slug>/project/`, then record the chosen paths.
 5. Run experiment.
 6. Parse metrics into a table.
 7. Reflect:
@@ -99,12 +96,10 @@ git status --short
 git diff --stat
 ```
 
-For a dataset- or manuscript-specific change, inspect and stage the project
-workspace only, for example `runs/<project_slug>/project/src/`,
-`runs/<project_slug>/project/configs/`, and `runs/<project_slug>/project/records/`. Do not use
-a core edit as a shortcut for a project adapter. A genuinely reusable core
-improvement needs its own test and separate commit that says why it applies to
-future projects.
+Inspect and stage the exact repository and project-workspace paths associated
+with the experiment. Repository edits are allowed for project methods and
+adapters; keep them focused, document the motivation in the journal, and add a
+test or smoke validation when practical.
 
 After a coherent change and successful smoke test:
 

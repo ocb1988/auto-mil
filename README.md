@@ -53,7 +53,7 @@ Prepare a generic configured dataset without launching training:
 
 ```powershell
 & "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli prepare-data `
-  --config configs\gastric_ki67_binary50.yaml
+  --config configs\my_experiment.yaml
 ```
 
 After confirming the plan, pass it into execution so the split is locked:
@@ -362,7 +362,7 @@ If the user provides a local method-review corpus, use it before online search:
 
 ```powershell
 & "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli literature-search `
-  --config configs\gastric_ki67_binary50.yaml `
+  --config configs\my_experiment.yaml `
   --local-review MIL_methods_overview.md `
   --offline
 ```
@@ -372,7 +372,7 @@ use `--offline` to avoid online search:
 
 ```powershell
 & "D:\ProgramData\Anaconda3\envs\torch2p7cu128\python.exe" -m auto_mil.cli literature-search `
-  --config configs\gastric_ki67_binary50.yaml `
+  --config configs\my_experiment.yaml `
   --user-sources papers.json `
   --offline
 ```
